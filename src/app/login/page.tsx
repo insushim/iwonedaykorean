@@ -10,7 +10,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setUser } = useAuthStore();
+  const { login } = useAuthStore();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,45 +34,11 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const { signInWithEmailAndPassword } = await import('firebase/auth');
-      const { auth } = await import('@/lib/firebase');
-      const { doc, getDoc } = await import('firebase/firestore');
-      const { db } = await import('@/lib/firebase');
-
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const uid = userCredential.user.uid;
-
-      const profileDoc = await getDoc(doc(db, 'users', uid));
-      if (profileDoc.exists()) {
-        setUser(profileDoc.data() as Parameters<typeof setUser>[0]);
-      }
-
+      await login(email, password);
       router.push('/dashboard');
     } catch (err: unknown) {
-      const firebaseError = err as { code?: string; message?: string };
-      switch (firebaseError.code) {
-        case 'auth/user-not-found':
-          setError('등록되지 않은 이메일입니다.');
-          break;
-        case 'auth/wrong-password':
-          setError('비밀번호가 올바르지 않습니다.');
-          break;
-        case 'auth/invalid-email':
-          setError('올바른 이메일 형식이 아닙니다.');
-          break;
-        case 'auth/too-many-requests':
-          setError('너무 많은 시도가 있었습니다. 잠시 후 다시 시도해 주세요.');
-          break;
-        default:
-          if (firebaseError.code) {
-            setError('로그인에 실패했습니다. 다시 시도해 주세요.');
-          } else {
-            setError('Firebase가 설정되지 않았습니다. 데모 모드로 이동합니다.');
-            setTimeout(() => {
-              router.push('/dashboard');
-            }, 1500);
-          }
-      }
+      const message = err instanceof Error ? err.message : '로그인에 실패했습니다. 다시 시도해 주세요.';
+      setError(message);
     } finally {
       setLoading(false);
     }

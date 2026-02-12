@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, User, Eye, EyeOff, AlertCircle, ChevronRight, ChevronLeft, Check } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import { useAuthStore } from '@/store/useAuthStore';
 import type { Grade, Semester } from '@/types';
 
 const grades: Grade[] = [1, 2, 3, 4, 5, 6];
@@ -27,6 +28,7 @@ function SignupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedGrade = searchParams.get('grade');
+  const { signup } = useAuthStore();
 
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState('');
@@ -91,72 +93,11 @@ function SignupContent() {
     setLoading(true);
 
     try {
-      const { createUserWithEmailAndPassword, updateProfile } = await import('firebase/auth');
-      const { doc, setDoc } = await import('firebase/firestore');
-      const { auth, db } = await import('@/lib/firebase');
-
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-
-      await updateProfile(user, { displayName: displayName.trim() });
-
-      const userProfile = {
-        uid: user.uid,
-        email: email.trim(),
-        displayName: displayName.trim(),
-        grade: selectedGrade,
-        semester: selectedSemester,
-        role: 'student',
-        xp: 0,
-        level: 1,
-        streak: 0,
-        longestStreak: 0,
-        streakFreezeCount: 0,
-        totalDaysCompleted: 0,
-        coins: 0,
-        badges: [],
-        avatarId: 'default-cat',
-        stats: {
-          domainScores: {
-            reading: { domain: 'reading', score: 0, totalQuestions: 0, correctAnswers: 0 },
-            literature: { domain: 'literature', score: 0, totalQuestions: 0, correctAnswers: 0 },
-            grammar: { domain: 'grammar', score: 0, totalQuestions: 0, correctAnswers: 0 },
-          },
-          totalSessions: 0,
-          totalQuestionsAnswered: 0,
-          totalCorrectAnswers: 0,
-          averageAccuracy: 0,
-          averageTimePerSession: 0,
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      await setDoc(doc(db, 'users', user.uid), userProfile);
-
+      await signup(email, password, displayName.trim(), selectedGrade, selectedSemester);
       router.push('/dashboard');
     } catch (err: unknown) {
-      const firebaseError = err as { code?: string; message?: string };
-      switch (firebaseError.code) {
-        case 'auth/email-already-in-use':
-          setError('이미 사용 중인 이메일입니다.');
-          break;
-        case 'auth/weak-password':
-          setError('비밀번호가 너무 약합니다. 6자 이상으로 설정해 주세요.');
-          break;
-        case 'auth/invalid-email':
-          setError('올바른 이메일 형식이 아닙니다.');
-          break;
-        default:
-          if (firebaseError.code) {
-            setError('회원가입에 실패했습니다. 다시 시도해 주세요.');
-          } else {
-            setError('Firebase가 설정되지 않았습니다. 데모 모드로 이동합니다.');
-            setTimeout(() => {
-              router.push('/dashboard');
-            }, 1500);
-          }
-      }
+      const message = err instanceof Error ? err.message : '회원가입에 실패했습니다. 다시 시도해 주세요.';
+      setError(message);
     } finally {
       setLoading(false);
     }

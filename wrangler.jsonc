@@ -6,5 +6,15 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
-  "main": ".open-next/worker.js"
+  "main": ".open-next/worker.js",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "iwonedaykorean-db",
+      "database_id": "placeholder-replace-after-d1-create"
+    }
+  ],
+  "vars": {
+    "JWT_SECRET": "change-this-in-production"
+  }
 }

@@ -1,8 +1,7 @@
 // =============================================================================
-// HaruKorean (하루국어) - Generate AI Explanation API Route
+// HaruKorean - Generate AI Explanation API Route
 // =============================================================================
 
-import { NextRequest, NextResponse } from 'next/server';
 import type { Grade } from '@/types';
 import { generateExplanation } from '@/lib/gemini';
 
@@ -34,7 +33,7 @@ function getDefaultExplanation(
 // POST handler
 // ---------------------------------------------------------------------------
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { question, correctAnswer, studentAnswer, grade } = body as {
@@ -46,25 +45,25 @@ export async function POST(request: NextRequest) {
 
     // Input validation
     if (!question || typeof question !== 'string') {
-      return NextResponse.json(
+      return Response.json(
         { success: false, error: 'question은 필수 항목입니다.' },
         { status: 400 },
       );
     }
     if (!correctAnswer || typeof correctAnswer !== 'string') {
-      return NextResponse.json(
+      return Response.json(
         { success: false, error: 'correctAnswer는 필수 항목입니다.' },
         { status: 400 },
       );
     }
     if (!studentAnswer || typeof studentAnswer !== 'string') {
-      return NextResponse.json(
+      return Response.json(
         { success: false, error: 'studentAnswer는 필수 항목입니다.' },
         { status: 400 },
       );
     }
     if (!grade || grade < 1 || grade > 6) {
-      return NextResponse.json(
+      return Response.json(
         { success: false, error: 'grade는 1~6 사이의 숫자여야 합니다.' },
         { status: 400 },
       );
@@ -93,12 +92,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({
+    return Response.json({
       explanation,
     });
   } catch (error) {
     console.error('설명 생성 오류:', error);
-    return NextResponse.json(
+    return Response.json(
       {
         success: false,
         error: '설명을 생성하는 중 오류가 발생했습니다.',

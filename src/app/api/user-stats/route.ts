@@ -1,160 +1,184 @@
 // =============================================================================
-// HaruKorean (하루국어) - User Stats API Route
+// HaruKorean - User Stats API Route
 // =============================================================================
 
-import { NextRequest, NextResponse } from 'next/server';
-
-// ---------------------------------------------------------------------------
-// UserStats response shape
-// ---------------------------------------------------------------------------
-
-interface UserStatsResponse {
-  totalDaysCompleted: number;
-  currentStreak: number;
-  longestStreak: number;
-  totalQuestions: number;
-  correctAnswers: number;
-  averageAccuracy: number;
-  domainScores: {
-    reading: number;
-    literature: number;
-    grammar: number;
-  };
-  recentAchievements: Array<{
-    id: string;
-    name: string;
-    icon: string;
-    earnedAt: string;
-  }>;
-  level: number;
-  xp: number;
-  coins: number;
-  weeklyData: Array<{
-    date: string;
-    completed: boolean;
-    score?: number;
-  }>;
-}
-
-// ---------------------------------------------------------------------------
-// Generate realistic mock data
-// ---------------------------------------------------------------------------
-
-function generateMockStats(userId: string): UserStatsResponse {
-  // Derive pseudo-random but deterministic values from userId
-  // so the same user always gets consistent mock data.
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) {
-    const char = userId.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
-  }
-  const seed = Math.abs(hash);
-
-  const totalDaysCompleted = 10 + (seed % 50);
-  const currentStreak = 1 + (seed % 14);
-  const longestStreak = Math.max(currentStreak, 5 + (seed % 30));
-  const totalQuestions = totalDaysCompleted * 14;
-  const accuracyBase = 65 + (seed % 30); // 65-94%
-  const correctAnswers = Math.round(totalQuestions * (accuracyBase / 100));
-  const averageAccuracy = Math.round((correctAnswers / totalQuestions) * 100);
-
-  const readingScore = 60 + (seed % 35);
-  const literatureScore = 55 + ((seed >> 3) % 40);
-  const grammarScore = 50 + ((seed >> 6) % 45);
-
-  const xp = totalDaysCompleted * 120 + correctAnswers * 8;
-  const level = Math.max(1, Math.min(50, Math.floor(Math.sqrt(xp / 100)) + 1));
-  const coins = totalDaysCompleted * 12 + Math.floor(xp / 50);
-
-  // Weekly data: last 7 days
-  const weeklyData: UserStatsResponse['weeklyData'] = [];
-  const today = new Date();
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - i);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const dateStr = `${year}-${month}-${day}`;
-
-    // Determine if completed: higher chance for recent streak days
-    const completed = i < currentStreak || (seed + i) % 3 !== 0;
-    const score = completed ? 60 + ((seed + i * 7) % 35) : undefined;
-
-    weeklyData.push({ date: dateStr, completed, score });
-  }
-
-  // Recent achievements
-  const possibleAchievements = [
-    { id: 'streak_3', name: '3일 연속 학습', icon: '\uD83D\uDD25' },
-    { id: 'streak_7', name: '일주일 연속 학습', icon: '\uD83D\uDD25' },
-    { id: 'complete_1', name: '첫 학습 완료', icon: '\uD83D\uDCD6' },
-    { id: 'complete_7', name: '7일 학습 완료', icon: '\uD83D\uDCD6' },
-    { id: 'perfect_day_1', name: '첫 만점의 날', icon: '\u2B50' },
-    { id: 'accuracy_80', name: '정확도 80% 달성', icon: '\uD83C\uDFAF' },
-    { id: 'questions_100', name: '100문제 해결', icon: '\u270F\uFE0F' },
-  ];
-
-  const numAchievements = Math.min(possibleAchievements.length, 2 + (seed % 4));
-  const recentAchievements = possibleAchievements
-    .slice(0, numAchievements)
-    .map((a, idx) => {
-      const earnedDate = new Date(today);
-      earnedDate.setDate(earnedDate.getDate() - idx * 3);
-      return {
-        ...a,
-        earnedAt: earnedDate.toISOString(),
-      };
-    });
-
-  return {
-    totalDaysCompleted,
-    currentStreak,
-    longestStreak,
-    totalQuestions,
-    correctAnswers,
-    averageAccuracy,
-    domainScores: {
-      reading: readingScore,
-      literature: literatureScore,
-      grammar: grammarScore,
-    },
-    recentAchievements,
-    level,
-    xp,
-    coins,
-    weeklyData,
-  };
-}
+import { getDB } from '@/lib/db';
+import { getAuthUser } from '@/lib/auth';
+import { ACHIEVEMENTS } from '@/data/gamification';
 
 // ---------------------------------------------------------------------------
 // GET handler
 // ---------------------------------------------------------------------------
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
+    const url = new URL(request.url);
+    let userId = url.searchParams.get('userId');
+
+    // Try authenticated user first
+    const authUser = await getAuthUser(request);
+    if (authUser) {
+      userId = authUser.uid;
+    }
 
     if (!userId) {
-      return NextResponse.json(
+      return Response.json(
         { success: false, error: 'userId 파라미터가 필요합니다.' },
         { status: 400 },
       );
     }
 
-    // Generate mock stats for the user
-    // In production, this would fetch from Firestore.
-    const stats = generateMockStats(userId);
+    const db = await getDB();
 
-    return NextResponse.json({
+    // -----------------------------------------------------------------------
+    // Fetch user from D1
+    // -----------------------------------------------------------------------
+
+    const userRow = await db
+      .prepare('SELECT * FROM users WHERE id = ?')
+      .bind(userId)
+      .first<Record<string, unknown>>();
+
+    if (!userRow) {
+      return Response.json(
+        { success: false, error: '사용자를 찾을 수 없습니다.' },
+        { status: 404 },
+      );
+    }
+
+    // -----------------------------------------------------------------------
+    // Query sessions for weekly data (last 7 days)
+    // -----------------------------------------------------------------------
+
+    const today = new Date();
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    const weekStart = sevenDaysAgo.toISOString().split('T')[0];
+
+    const weeklySessionRows = await db
+      .prepare(
+        'SELECT date, status, correct_on_first_try, total_questions FROM sessions WHERE user_id = ? AND date >= ? ORDER BY date ASC',
+      )
+      .bind(userId, weekStart)
+      .all<Record<string, unknown>>();
+
+    const weeklySessionMap = new Map<string, { completed: boolean; score: number }>();
+    if (weeklySessionRows.results) {
+      for (const row of weeklySessionRows.results) {
+        const date = row.date as string;
+        const completed = row.status === 'completed';
+        const totalQ = (row.total_questions as number) || 1;
+        const correctFirst = (row.correct_on_first_try as number) || 0;
+        const score = Math.round((correctFirst / totalQ) * 100);
+        weeklySessionMap.set(date, { completed, score });
+      }
+    }
+
+    // Build weekly data array for last 7 days
+    const weeklyData: Array<{ date: string; completed: boolean; score?: number }> = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+
+      const sessionInfo = weeklySessionMap.get(dateStr);
+      weeklyData.push({
+        date: dateStr,
+        completed: sessionInfo?.completed ?? false,
+        score: sessionInfo?.score,
+      });
+    }
+
+    // -----------------------------------------------------------------------
+    // Query total sessions and questions
+    // -----------------------------------------------------------------------
+
+    const sessionStatsRow = await db
+      .prepare(
+        `SELECT
+          COUNT(*) as total_sessions,
+          COALESCE(SUM(total_questions), 0) as total_questions,
+          COALESCE(SUM(correct_on_first_try), 0) as correct_answers,
+          COALESCE(AVG(time_spent_seconds), 0) as avg_time
+        FROM sessions WHERE user_id = ? AND status = 'completed'`,
+      )
+      .bind(userId)
+      .first<Record<string, unknown>>();
+
+    const totalSessions = (sessionStatsRow?.total_sessions as number) || 0;
+    const totalQuestions = (sessionStatsRow?.total_questions as number) || 0;
+    const correctAnswers = (sessionStatsRow?.correct_answers as number) || 0;
+    const averageAccuracy = totalQuestions > 0
+      ? Math.round((correctAnswers / totalQuestions) * 100)
+      : 0;
+    const averageTime = Math.round((sessionStatsRow?.avg_time as number) || 0);
+
+    // -----------------------------------------------------------------------
+    // Query wrong notes count
+    // -----------------------------------------------------------------------
+
+    const wrongNotesRow = await db
+      .prepare('SELECT COUNT(*) as count FROM wrong_notes WHERE user_id = ? AND reviewed = 0')
+      .bind(userId)
+      .first<Record<string, unknown>>();
+
+    const wrongNotesCount = (wrongNotesRow?.count as number) || 0;
+
+    // -----------------------------------------------------------------------
+    // Build recent achievements
+    // -----------------------------------------------------------------------
+
+    const badges: string[] = JSON.parse((userRow.badges as string) || '[]');
+    const recentAchievements = badges
+      .slice(-5)
+      .map((badgeId) => {
+        const achievement = ACHIEVEMENTS.find((a) => a.id === badgeId);
+        if (!achievement) return null;
+        return {
+          id: achievement.id,
+          name: achievement.name,
+          icon: achievement.icon,
+          earnedAt: userRow.updated_at as string,
+        };
+      })
+      .filter((a): a is NonNullable<typeof a> => a !== null);
+
+    // -----------------------------------------------------------------------
+    // Build response
+    // -----------------------------------------------------------------------
+
+    const stats = {
+      totalDaysCompleted: (userRow.total_days_completed as number) || 0,
+      currentStreak: (userRow.streak as number) || 0,
+      longestStreak: (userRow.longest_streak as number) || 0,
+      totalQuestions,
+      correctAnswers,
+      averageAccuracy,
+      averageTimePerSession: averageTime,
+      domainScores: {
+        reading: (userRow.reading_score as number) || 0,
+        literature: (userRow.literature_score as number) || 0,
+        grammar: (userRow.grammar_score as number) || 0,
+      },
+      recentAchievements,
+      level: (userRow.level as number) || 1,
+      xp: (userRow.xp as number) || 0,
+      coins: (userRow.coins as number) || 0,
+      weeklyData,
+      wrongNotesCount,
+      totalSessions,
+    };
+
+    return Response.json({
       success: true,
       stats,
     });
   } catch (error) {
     console.error('사용자 통계 조회 오류:', error);
-    return NextResponse.json(
+    return Response.json(
       {
         success: false,
         error: '사용자 통계를 불러오는 중 오류가 발생했습니다.',

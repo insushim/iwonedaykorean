@@ -1,10 +1,12 @@
 // =============================================================================
 // HaruKorean (하루국어) - Auth State Store (Zustand)
+// Migrated from Firebase to custom API auth
 // =============================================================================
+
+'use client';
 
 import { create } from 'zustand';
 import type { UserProfile } from '@/types';
-import { onAuthStateChanged, getUserProfile } from '@/lib/auth';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -19,28 +21,21 @@ interface AuthState {
   initialized: boolean;
   /** Any auth-related error message */
   error: string | null;
-}
 
-interface AuthActions {
-  /** Set the current user profile */
-  setUser: (user: UserProfile | null) => void;
-  /** Clear the current user (logout) */
-  clearUser: () => void;
-  /** Set the loading state */
-  setLoading: (loading: boolean) => void;
-  /** Set an error message */
-  setError: (error: string | null) => void;
-  /** Initialize the Firebase auth state listener */
-  initAuth: () => () => void;
-  /** Update specific fields of the current user profile in the store */
+  initAuth: () => Promise<void>;
+  login: (email: string, password: string) => Promise<UserProfile>;
+  signup: (email: string, password: string, displayName: string, grade: number, semester: number) => Promise<UserProfile>;
+  logout: () => Promise<void>;
   updateUser: (data: Partial<UserProfile>) => void;
+  setError: (error: string | null) => void;
+  refreshUser: () => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
 
-export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   // State
   user: null,
   loading: true,
@@ -48,59 +43,93 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   error: null,
 
   // Actions
-  setUser: (user) => set({ user, loading: false, error: null }),
-
-  clearUser: () => set({ user: null, loading: false, error: null }),
-
-  setLoading: (loading) => set({ loading }),
-
-  setError: (error) => set({ error, loading: false }),
-
-  updateUser: (data) => {
-    const { user } = get();
-    if (user) {
-      set({ user: { ...user, ...data } });
+  initAuth: async () => {
+    if (get().initialized) return;
+    try {
+      const res = await fetch('/api/auth/me');
+      if (res.ok) {
+        const data = await res.json();
+        set({ user: data.user, loading: false, initialized: true });
+      } else {
+        set({ user: null, loading: false, initialized: true });
+      }
+    } catch {
+      set({ user: null, loading: false, initialized: true });
     }
   },
 
-  initAuth: () => {
-    // Prevent multiple initializations
-    if (get().initialized) {
-      return () => {};
-    }
-
-    set({ initialized: true, loading: true });
-
-    const unsubscribe = onAuthStateChanged(async (firebaseUser) => {
-      if (firebaseUser) {
-        try {
-          // Fetch the full user profile from Firestore
-          const profile = await getUserProfile(firebaseUser.uid);
-
-          if (profile) {
-            set({ user: profile, loading: false, error: null });
-          } else {
-            // User exists in Auth but not in Firestore
-            // This shouldn't happen in normal flow, but handle gracefully
-            set({
-              user: null,
-              loading: false,
-              error: '사용자 프로필을 찾을 수 없습니다.',
-            });
-          }
-        } catch (err) {
-          const errorMessage =
-            err instanceof Error
-              ? err.message
-              : '프로필을 불러오는 중 오류가 발생했습니다.';
-          set({ user: null, loading: false, error: errorMessage });
-        }
-      } else {
-        // User is signed out
-        set({ user: null, loading: false, error: null });
+  login: async (email: string, password: string) => {
+    set({ loading: true, error: null });
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        set({ loading: false, error: data.error || '로그인에 실패했습니다' });
+        throw new Error(data.error || '로그인에 실패했습니다');
       }
-    });
+      set({ user: data.user, loading: false, error: null });
+      return data.user;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '로그인에 실패했습니다';
+      set({ loading: false, error: message });
+      throw err;
+    }
+  },
 
-    return unsubscribe;
+  signup: async (email: string, password: string, displayName: string, grade: number, semester: number) => {
+    set({ loading: true, error: null });
+    try {
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, displayName, grade, semester }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        set({ loading: false, error: data.error || '회원가입에 실패했습니다' });
+        throw new Error(data.error || '회원가입에 실패했습니다');
+      }
+      set({ user: data.user, loading: false, error: null });
+      return data.user;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '회원가입에 실패했습니다';
+      set({ loading: false, error: message });
+      throw err;
+    }
+  },
+
+  logout: async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      set({ user: null, error: null });
+    }
+  },
+
+  updateUser: (data: Partial<UserProfile>) => {
+    const currentUser = get().user;
+    if (currentUser) {
+      set({ user: { ...currentUser, ...data } });
+    }
+  },
+
+  setError: (error: string | null) => set({ error }),
+
+  refreshUser: async () => {
+    try {
+      const res = await fetch('/api/auth/me');
+      if (res.ok) {
+        const data = await res.json();
+        set({ user: data.user });
+      }
+    } catch {
+      // silently fail
+    }
   },
 }));
+
+export default useAuthStore;

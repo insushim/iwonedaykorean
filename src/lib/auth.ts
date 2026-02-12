@@ -1,259 +1,313 @@
 // =============================================================================
-// HaruKorean (하루국어) - Authentication Utilities
+// HaruKorean (하루국어) - Authentication Utilities (D1 + Web Crypto)
 // =============================================================================
 
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  onAuthStateChanged as firebaseOnAuthStateChanged,
-  updateProfile,
-  type User,
-  type Unsubscribe,
-} from 'firebase/auth';
-import {
-  doc,
-  setDoc,
-  getDoc,
-  updateDoc,
-  serverTimestamp,
-} from 'firebase/firestore';
-import { auth, db } from './firebase';
-import type { Grade, Semester, UserProfile, UserRole, Domain } from '@/types';
+import { getDB, getEnv } from './db';
+import type { UserProfile } from '@/types';
 
 // ---------------------------------------------------------------------------
-// Sign Up
+// Base64url encoding helper
 // ---------------------------------------------------------------------------
 
-/**
- * Create a new user account with email and password,
- * then create the corresponding Firestore user profile.
- */
-export async function signUpWithEmail(
-  email: string,
-  password: string,
-  displayName: string,
-  grade: Grade,
-  semester: Semester
-): Promise<UserProfile> {
-  // Create Firebase Auth account
-  const credential = await createUserWithEmailAndPassword(auth, email, password);
-  const user = credential.user;
-
-  // Update display name in Firebase Auth
-  await updateProfile(user, { displayName });
-
-  // Create Firestore user profile
-  const profile = await createUserProfile(user.uid, {
-    email,
-    displayName,
-    grade,
-    semester,
-  });
-
-  return profile;
+function base64url(data: string | ArrayBuffer): string {
+  const str =
+    typeof data === 'string'
+      ? btoa(data)
+      : btoa(String.fromCharCode(...new Uint8Array(data)));
+  return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 // ---------------------------------------------------------------------------
-// Sign In
+// Password Hashing (PBKDF2 via Web Crypto API)
 // ---------------------------------------------------------------------------
 
 /**
- * Sign in with email and password.
- * Returns the user's Firestore profile.
+ * Hash a password using PBKDF2 with a random salt.
+ * Returns "salt_hex:hash_hex".
  */
-export async function signInWithEmail(
-  email: string,
-  password: string
-): Promise<UserProfile | null> {
-  const credential = await signInWithEmailAndPassword(auth, email, password);
-  const profile = await getUserProfile(credential.user.uid);
-  return profile;
-}
+export async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
 
-// ---------------------------------------------------------------------------
-// Sign Out
-// ---------------------------------------------------------------------------
-
-/**
- * Sign out the current user.
- */
-export async function signOut(): Promise<void> {
-  await firebaseSignOut(auth);
-}
-
-// ---------------------------------------------------------------------------
-// Auth State Listener
-// ---------------------------------------------------------------------------
-
-/**
- * Subscribe to auth state changes.
- * Returns an unsubscribe function.
- */
-export function onAuthStateChanged(
-  callback: (user: User | null) => void
-): Unsubscribe {
-  return firebaseOnAuthStateChanged(auth, callback);
-}
-
-// ---------------------------------------------------------------------------
-// User Profile CRUD
-// ---------------------------------------------------------------------------
-
-const DEFAULT_DOMAIN_SCORE = {
-  score: 0,
-  totalQuestions: 0,
-  correctAnswers: 0,
-};
-
-/**
- * Create a new user profile document in Firestore.
- */
-export async function createUserProfile(
-  uid: string,
-  data: {
-    email: string;
-    displayName: string;
-    grade: Grade;
-    semester: Semester;
-    role?: UserRole;
-  }
-): Promise<UserProfile> {
-  const now = new Date().toISOString();
-
-  const profile: UserProfile = {
-    uid,
-    email: data.email,
-    displayName: data.displayName,
-    grade: data.grade,
-    semester: data.semester,
-    role: data.role || 'student',
-    xp: 0,
-    level: 1,
-    streak: 0,
-    longestStreak: 0,
-    streakFreezeCount: 0,
-    totalDaysCompleted: 0,
-    coins: 0,
-    badges: [],
-    avatarId: 'default',
-    stats: {
-      domainScores: {
-        reading: { domain: 'reading', ...DEFAULT_DOMAIN_SCORE },
-        literature: { domain: 'literature', ...DEFAULT_DOMAIN_SCORE },
-        grammar: { domain: 'grammar', ...DEFAULT_DOMAIN_SCORE },
-      },
-      totalSessions: 0,
-      totalQuestionsAnswered: 0,
-      totalCorrectAnswers: 0,
-      averageAccuracy: 0,
-      averageTimePerSession: 0,
+  const hashBuffer = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt,
+      iterations: 100000,
+      hash: 'SHA-256',
     },
-    createdAt: now,
-    updatedAt: now,
+    keyMaterial,
+    256
+  );
+
+  const saltHex = Array.from(salt)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  const hashHex = Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  return `${saltHex}:${hashHex}`;
+}
+
+/**
+ * Verify a password against a stored "salt_hex:hash_hex" hash.
+ */
+export async function verifyPassword(
+  password: string,
+  storedHash: string
+): Promise<boolean> {
+  const [saltHex, expectedHashHex] = storedHash.split(':');
+  if (!saltHex || !expectedHashHex) return false;
+
+  const salt = new Uint8Array(
+    saltHex.match(/.{2}/g)!.map((byte) => parseInt(byte, 16))
+  );
+
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+
+  const hashBuffer = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt,
+      iterations: 100000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256
+  );
+
+  const hashHex = Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  return hashHex === expectedHashHex;
+}
+
+// ---------------------------------------------------------------------------
+// JWT (HMAC-SHA256 via Web Crypto API)
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a JWT token with HMAC-SHA256 signature and 7-day expiry.
+ */
+export async function createJWT(
+  userId: string,
+  secret: string
+): Promise<string> {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const payload = {
+    userId,
+    exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60, // 7 days
+    iat: Math.floor(Date.now() / 1000),
   };
 
-  await setDoc(doc(db, 'users', uid), profile);
+  const encodedHeader = base64url(JSON.stringify(header));
+  const encodedPayload = base64url(JSON.stringify(payload));
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
 
-  return profile;
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    encoder.encode(signingInput)
+  );
+
+  return `${signingInput}.${base64url(signature)}`;
 }
 
 /**
- * Get a user's profile from Firestore.
+ * Verify and decode a JWT token.
+ * Returns the payload if valid, null otherwise.
  */
-export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-  const docRef = doc(db, 'users', uid);
-  const docSnap = await getDoc(docRef);
+export async function verifyJWT(
+  token: string,
+  secret: string
+): Promise<{ userId: string; exp: number } | null> {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
 
-  if (!docSnap.exists()) {
+    const [encodedHeader, encodedPayload, encodedSignature] = parts;
+    const signingInput = `${encodedHeader}.${encodedPayload}`;
+
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+
+    // Decode base64url signature back to ArrayBuffer
+    const signatureStr = encodedSignature
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const signatureBytes = Uint8Array.from(atob(signatureStr), (c) =>
+      c.charCodeAt(0)
+    );
+
+    const valid = await crypto.subtle.verify(
+      'HMAC',
+      key,
+      signatureBytes,
+      encoder.encode(signingInput)
+    );
+
+    if (!valid) return null;
+
+    // Decode payload
+    const payloadStr = atob(
+      encodedPayload.replace(/-/g, '+').replace(/_/g, '/')
+    );
+    const payload = JSON.parse(payloadStr) as {
+      userId: string;
+      exp: number;
+    };
+
+    // Check expiry
+    if (payload.exp < Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+
+    return payload;
+  } catch {
     return null;
   }
-
-  return docSnap.data() as UserProfile;
 }
 
-/**
- * Update a user's profile in Firestore.
- * Only updates the fields provided in the data parameter.
- */
-export async function updateUserProfile(
-  uid: string,
-  data: Partial<Omit<UserProfile, 'uid' | 'createdAt'>>
-): Promise<void> {
-  const docRef = doc(db, 'users', uid);
-  await updateDoc(docRef, {
-    ...data,
-    updatedAt: new Date().toISOString(),
-  });
-}
+// ---------------------------------------------------------------------------
+// Auth User Extraction
+// ---------------------------------------------------------------------------
 
 /**
- * Update a user's domain score after completing a session.
+ * Extract and verify the authenticated user from a request.
+ * Reads the 'token' cookie, verifies the JWT, and queries D1 for the user profile.
  */
-export async function updateDomainScore(
-  uid: string,
-  domain: Domain,
-  correct: number,
-  total: number
-): Promise<void> {
-  const profile = await getUserProfile(uid);
-  if (!profile) return;
+export async function getAuthUser(
+  request: Request
+): Promise<UserProfile | null> {
+  try {
+    const cookieHeader = request.headers.get('cookie');
+    if (!cookieHeader) return null;
 
-  const currentDomainScore = profile.stats.domainScores[domain];
-  const newTotalQuestions = currentDomainScore.totalQuestions + total;
-  const newCorrectAnswers = currentDomainScore.correctAnswers + correct;
-  const newScore = newTotalQuestions > 0
-    ? Math.round((newCorrectAnswers / newTotalQuestions) * 100)
-    : 0;
+    // Parse the 'token' cookie
+    const cookies = Object.fromEntries(
+      cookieHeader.split(';').map((c) => {
+        const [key, ...val] = c.trim().split('=');
+        return [key, val.join('=')];
+      })
+    );
 
-  const updatedDomainScores = {
-    ...profile.stats.domainScores,
-    [domain]: {
-      domain,
-      score: newScore,
-      totalQuestions: newTotalQuestions,
-      correctAnswers: newCorrectAnswers,
-    },
-  };
+    const token = cookies['token'];
+    if (!token) return null;
 
-  const newTotalQuestionsAnswered = profile.stats.totalQuestionsAnswered + total;
-  const newTotalCorrectAnswers = profile.stats.totalCorrectAnswers + correct;
-  const newAverageAccuracy = newTotalQuestionsAnswered > 0
-    ? Math.round((newTotalCorrectAnswers / newTotalQuestionsAnswered) * 100)
-    : 0;
+    const env = await getEnv();
+    const payload = await verifyJWT(token, env.JWT_SECRET);
+    if (!payload) return null;
 
-  await updateUserProfile(uid, {
-    stats: {
-      ...profile.stats,
-      domainScores: updatedDomainScores,
-      totalQuestionsAnswered: newTotalQuestionsAnswered,
-      totalCorrectAnswers: newTotalCorrectAnswers,
-      averageAccuracy: newAverageAccuracy,
-    },
-  });
-}
+    const db = await getDB();
+    const row = await db
+      .prepare('SELECT * FROM users WHERE id = ?')
+      .bind(payload.userId)
+      .first<Record<string, unknown>>();
 
-/**
- * Update streak information for a user.
- * Call this when a user completes their daily session.
- */
-export async function updateStreak(uid: string): Promise<{
-  newStreak: number;
-  isNewRecord: boolean;
-}> {
-  const profile = await getUserProfile(uid);
-  if (!profile) {
-    return { newStreak: 0, isNewRecord: false };
+    if (!row) return null;
+
+    return rowToUserProfile(row);
+  } catch {
+    return null;
   }
+}
 
-  const newStreak = profile.streak + 1;
-  const isNewRecord = newStreak > profile.longestStreak;
+// ---------------------------------------------------------------------------
+// D1 Row to UserProfile Mapper
+// ---------------------------------------------------------------------------
 
-  await updateUserProfile(uid, {
-    streak: newStreak,
-    longestStreak: isNewRecord ? newStreak : profile.longestStreak,
-    totalDaysCompleted: profile.totalDaysCompleted + 1,
-  });
+/**
+ * Map a D1 database row to a UserProfile object.
+ */
+export function rowToUserProfile(row: Record<string, unknown>): UserProfile {
+  const readingTotal = (row.reading_total as number) || 0;
+  const readingCorrect = (row.reading_correct as number) || 0;
+  const literatureTotal = (row.literature_total as number) || 0;
+  const literatureCorrect = (row.literature_correct as number) || 0;
+  const grammarTotal = (row.grammar_total as number) || 0;
+  const grammarCorrect = (row.grammar_correct as number) || 0;
 
-  return { newStreak, isNewRecord };
+  const totalQuestions = readingTotal + literatureTotal + grammarTotal;
+  const totalCorrect = readingCorrect + literatureCorrect + grammarCorrect;
+  const averageAccuracy =
+    totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
+
+  return {
+    uid: row.id as string,
+    email: row.email as string,
+    displayName: row.display_name as string,
+    grade: row.grade as number as UserProfile['grade'],
+    semester: row.semester as number as UserProfile['semester'],
+    role: ((row.role as string) || 'student') as UserProfile['role'],
+    parentLinkedTo: row.parent_linked_to as string | undefined,
+    xp: (row.xp as number) || 0,
+    level: (row.level as number) || 1,
+    streak: (row.streak as number) || 0,
+    longestStreak: (row.longest_streak as number) || 0,
+    streakFreezeCount: (row.streak_freeze_count as number) || 0,
+    totalDaysCompleted: (row.total_days_completed as number) || 0,
+    coins: (row.coins as number) || 0,
+    badges: JSON.parse((row.badges as string) || '[]'),
+    avatarId: (row.avatar_id as string) || 'default',
+    stats: {
+      domainScores: {
+        reading: {
+          domain: 'reading',
+          score: (row.reading_score as number) || 0,
+          totalQuestions: readingTotal,
+          correctAnswers: readingCorrect,
+        },
+        literature: {
+          domain: 'literature',
+          score: (row.literature_score as number) || 0,
+          totalQuestions: literatureTotal,
+          correctAnswers: literatureCorrect,
+        },
+        grammar: {
+          domain: 'grammar',
+          score: (row.grammar_score as number) || 0,
+          totalQuestions: grammarTotal,
+          correctAnswers: grammarCorrect,
+        },
+      },
+      totalSessions: 0,
+      totalQuestionsAnswered: totalQuestions,
+      totalCorrectAnswers: totalCorrect,
+      averageAccuracy,
+      averageTimePerSession: 0,
+    },
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
 }

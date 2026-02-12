@@ -1,8 +1,7 @@
 // =============================================================================
-// HaruKorean (하루국어) - Generate Daily Quiz API Route
+// HaruKorean - Generate Daily Quiz API Route
 // =============================================================================
 
-import { NextRequest, NextResponse } from 'next/server';
 import type {
   Grade,
   Semester,
@@ -19,19 +18,14 @@ import {
   getPassagesByGradeGroup,
 } from '@/data/passages';
 import {
-  SEED_QUESTIONS,
   getQuestionsByPassageId,
   getGrammarQuestions,
 } from '@/data/questions';
 import { CURRICULUM_STANDARDS } from '@/data/curriculum';
 import { generateDailyQuiz } from '@/lib/gemini';
 import { getTodayDateString, generateSessionId } from '@/lib/utils';
-
-// ---------------------------------------------------------------------------
-// In-memory session cache (temporary until persistent storage is added)
-// ---------------------------------------------------------------------------
-
-const sessionCache = new Map<string, DailySession>();
+import { getDB } from '@/lib/db';
+import { getAuthUser } from '@/lib/auth';
 
 // ---------------------------------------------------------------------------
 // Question count configuration per grade group
@@ -149,9 +143,6 @@ function selectGrammarQuestions(grade: Grade, count: number): Question[] {
   const allGrammar = getGrammarQuestions();
   const gradeGroup = getGradeGroup(grade);
 
-  // Try to find grammar questions matching the grade group by looking at
-  // related standards. Grammar standards follow a pattern like 2국04-xx,
-  // 4국04-xx, 6국04-xx depending on grade group.
   const gradeGroupPrefix =
     gradeGroup === '1-2' ? '2국04' :
     gradeGroup === '3-4' ? '4국04' :
@@ -165,7 +156,6 @@ function selectGrammarQuestions(grade: Grade, count: number): Question[] {
     return pickRandom(matched, count);
   }
 
-  // Fall back: use any grammar questions available
   if (allGrammar.length >= count) {
     return pickRandom(allGrammar, count);
   }
@@ -188,7 +178,6 @@ function buildSessionFromSeed(
 
   const selected = selectPassagesFromSeed(gradeGroup, grade, semester);
 
-  // We need at least one passage to create a session
   if (!selected.nonfiction && !selected.fiction && !selected.poetry) {
     return null;
   }
@@ -216,11 +205,9 @@ function buildSessionFromSeed(
     );
   }
 
-  // Grammar questions
   const grammarQuestions = selectGrammarQuestions(grade, config.grammar);
   const sessionGrammar = grammarQuestions.map(buildSessionQuestion);
 
-  // Calculate total questions
   const totalQuestions =
     passages.reduce((sum, p) => sum + p.questions.length, 0) +
     sessionGrammar.length;
@@ -318,35 +305,107 @@ async function buildSessionFromGemini(
 }
 
 // ---------------------------------------------------------------------------
+// Helper: convert a D1 row back into a DailySession
+// ---------------------------------------------------------------------------
+
+function rowToSession(row: Record<string, unknown>): DailySession {
+  return {
+    id: row.id as string,
+    userId: row.user_id as string,
+    grade: row.grade as Grade,
+    semester: row.semester as Semester,
+    date: row.date as string,
+    status: (row.status as DailySession['status']) || 'in_progress',
+    passages: JSON.parse((row.passages_data as string) || '[]'),
+    grammarQuestions: JSON.parse((row.grammar_questions_data as string) || '[]'),
+    totalQuestions: (row.total_questions as number) || 0,
+    correctOnFirstTry: (row.correct_on_first_try as number) || 0,
+    totalAttempts: (row.total_attempts as number) || 0,
+    xpEarned: (row.xp_earned as number) || 0,
+    coinsEarned: (row.coins_earned as number) || 0,
+    startedAt: (row.started_at as string) || new Date().toISOString(),
+    completedAt: row.completed_at as string | undefined,
+    timeSpentSeconds: (row.time_spent_seconds as number) || 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Helper: persist a DailySession to D1
+// ---------------------------------------------------------------------------
+
+async function persistSession(
+  db: { prepare: (query: string) => { bind: (...args: unknown[]) => { run: () => Promise<unknown> } } },
+  session: DailySession,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO sessions (
+        id, user_id, grade, semester, date, status,
+        passages_data, grammar_questions_data,
+        total_questions, correct_on_first_try, total_attempts,
+        xp_earned, coins_earned, started_at, completed_at, time_spent_seconds
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      session.id,
+      session.userId,
+      session.grade,
+      session.semester,
+      session.date,
+      session.status,
+      JSON.stringify(session.passages),
+      JSON.stringify(session.grammarQuestions),
+      session.totalQuestions,
+      session.correctOnFirstTry,
+      session.totalAttempts,
+      session.xpEarned,
+      session.coinsEarned,
+      session.startedAt,
+      session.completedAt || null,
+      session.timeSpentSeconds,
+    )
+    .run();
+}
+
+// ---------------------------------------------------------------------------
 // POST handler
 // ---------------------------------------------------------------------------
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { userId, grade, semester } = body as {
-      userId: string;
+    let { userId, grade, semester } = body as {
+      userId?: string;
       grade: number;
       semester: number;
     };
 
+    // Try to get authenticated user; fall back to userId from body
+    const authUser = await getAuthUser(request);
+    if (authUser) {
+      userId = authUser.uid;
+      // Use the authenticated user's grade/semester if not explicitly provided
+      if (!grade) grade = authUser.grade;
+      if (!semester) semester = authUser.semester;
+    }
+
     // Input validation
     if (!userId || typeof userId !== 'string') {
-      return NextResponse.json(
+      return Response.json(
         { success: false, error: 'userId는 필수 항목입니다.' },
         { status: 400 },
       );
     }
 
     if (!grade || grade < 1 || grade > 6) {
-      return NextResponse.json(
+      return Response.json(
         { success: false, error: '학년은 1~6 사이여야 합니다.' },
         { status: 400 },
       );
     }
 
     if (!semester || (semester !== 1 && semester !== 2)) {
-      return NextResponse.json(
+      return Response.json(
         { success: false, error: '학기는 1 또는 2여야 합니다.' },
         { status: 400 },
       );
@@ -356,17 +415,29 @@ export async function POST(request: NextRequest) {
     const validSemester = semester as Semester;
     const today = getTodayDateString();
 
-    // Check for existing session for this user+date
-    const cacheKey = `${userId}_${today}`;
-    const existingSession = sessionCache.get(cacheKey);
-    if (existingSession) {
-      return NextResponse.json({
+    const db = await getDB();
+
+    // -----------------------------------------------------------------------
+    // Check for existing session in D1 for this user + date
+    // -----------------------------------------------------------------------
+
+    const existingRow = await db
+      .prepare('SELECT * FROM sessions WHERE user_id = ? AND date = ?')
+      .bind(userId, today)
+      .first<Record<string, unknown>>();
+
+    if (existingRow) {
+      const existingSession = rowToSession(existingRow);
+      return Response.json({
         success: true,
         session: existingSession,
       });
     }
 
+    // -----------------------------------------------------------------------
     // Try to build session from seed data first
+    // -----------------------------------------------------------------------
+
     let session = buildSessionFromSeed(userId, validGrade, validSemester, today);
 
     // If seed data is insufficient, fall back to Gemini AI generation
@@ -381,12 +452,10 @@ export async function POST(request: NextRequest) {
       } catch (geminiError) {
         console.error('Gemini 생성 실패:', geminiError);
 
-        // If Gemini also fails, try building from whatever seed data we have
-        // even if it doesn't match perfectly
         session = buildSessionFromSeed(userId, validGrade, validSemester, today);
 
         if (!session) {
-          return NextResponse.json(
+          return Response.json(
             {
               success: false,
               error: '오늘의 학습을 생성할 수 없습니다. 잠시 후 다시 시도해 주세요.',
@@ -397,16 +466,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Cache the session
-    sessionCache.set(cacheKey, session);
+    // -----------------------------------------------------------------------
+    // Persist session to D1
+    // -----------------------------------------------------------------------
 
-    return NextResponse.json({
+    await persistSession(db, session);
+
+    return Response.json({
       success: true,
       session,
     });
   } catch (error) {
     console.error('일일 학습 생성 오류:', error);
-    return NextResponse.json(
+    return Response.json(
       {
         success: false,
         error: '서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',

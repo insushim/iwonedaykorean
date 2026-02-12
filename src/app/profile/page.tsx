@@ -12,13 +12,13 @@ import {
 import Button from '@/components/ui/Button';
 import Card, { CardBody } from '@/components/ui/Card';
 import { useAuthStore } from '@/store/useAuthStore';
-import { getLevelProgress, getGradeLabel, getSemesterLabel, calculateAccuracy } from '@/lib/utils';
+import { getLevelProgress, getGradeLabel, getSemesterLabel } from '@/lib/utils';
 import type { Grade, Semester } from '@/types';
 
 export default function ProfilePage() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
-  const clearUser = useAuthStore((s) => s.clearUser);
+  const { logout } = useAuthStore();
 
   const [soundOn, setSoundOn] = useState(true);
   const [editingName, setEditingName] = useState(false);
@@ -45,14 +45,7 @@ export default function ProfilePage() {
   const accuracy = Math.round(user.stats.averageAccuracy);
 
   const handleLogout = async () => {
-    try {
-      const { signOut } = await import('firebase/auth');
-      const { auth } = await import('@/lib/firebase');
-      await signOut(auth);
-    } catch {
-      // Firebase not configured; proceed with local logout
-    }
-    clearUser();
+    await logout();
     router.push('/');
   };
 
