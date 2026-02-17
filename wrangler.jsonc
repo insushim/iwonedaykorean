@@ -7,11 +7,12 @@
     "binding": "ASSETS"
   },
   "main": ".open-next/worker.js",
+  "find_additional_modules": false,
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "iwonedaykorean-db",
-      "database_id": "54f70ab3-09f5-4401-9eb2-5ee5a4d718c5"
+      "database_id": "2e074afa-2d6c-41e8-b54b-9329d4d078d0"
     }
   ],
   "vars": {
