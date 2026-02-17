@@ -287,6 +287,23 @@ export default function QuizSessionPage() {
     setIsCorrect(null);
   };
 
+  if (!user && !loadingSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <div className="text-6xl mb-4">&#128049;</div>
+          <p className="text-gray-600 mb-4">로그인이 필요합니다.</p>
+          <button
+            onClick={() => router.push('/login')}
+            className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors cursor-pointer"
+          >
+            로그인하기
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!session || !currentQuestion || loadingSession) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">

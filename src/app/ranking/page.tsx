@@ -1,31 +1,19 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Crown, Medal, Award, Flame, Trophy, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Crown, Medal, Award, Flame } from 'lucide-react';
 import Card, { CardBody } from '@/components/ui/Card';
 import { useAuthStore } from '@/store/useAuthStore';
 import type { LeaderboardEntry, Grade } from '@/types';
 
 type PeriodTab = 'weekly' | 'monthly';
 
-const mockLeaderboard: LeaderboardEntry[] = [
-  { uid: 'user-001', displayName: '국어왕서연', avatarId: 'cat', grade: 3, level: 12, xp: 4200, streak: 32, totalDaysCompleted: 45, rank: 1, weeklyXp: 580 },
-  { uid: 'user-002', displayName: '독서소년민준', avatarId: 'dog', grade: 3, level: 11, xp: 3900, streak: 28, totalDaysCompleted: 40, rank: 2, weeklyXp: 520 },
-  { uid: 'user-003', displayName: '문학소녀지유', avatarId: 'rabbit', grade: 4, level: 10, xp: 3600, streak: 21, totalDaysCompleted: 38, rank: 3, weeklyXp: 490 },
-  { uid: 'user-004', displayName: '꼼꼼하은', avatarId: 'bear', grade: 3, level: 9, xp: 3100, streak: 18, totalDaysCompleted: 35, rank: 4, weeklyXp: 450 },
-  { uid: 'mock-user-001', displayName: '하루학생', avatarId: 'default-cat', grade: 3, level: 5, xp: 1250, streak: 7, totalDaysCompleted: 23, rank: 5, weeklyXp: 380 },
-  { uid: 'user-005', displayName: '열공예준', avatarId: 'penguin', grade: 3, level: 8, xp: 2800, streak: 15, totalDaysCompleted: 32, rank: 6, weeklyXp: 350 },
-  { uid: 'user-006', displayName: '책벌레다은', avatarId: 'cat', grade: 4, level: 7, xp: 2500, streak: 12, totalDaysCompleted: 28, rank: 7, weeklyXp: 320 },
-  { uid: 'user-007', displayName: '문법박사시우', avatarId: 'dragon', grade: 3, level: 6, xp: 2200, streak: 10, totalDaysCompleted: 25, rank: 8, weeklyXp: 290 },
-  { uid: 'user-008', displayName: '호기심하린', avatarId: 'unicorn', grade: 3, level: 5, xp: 1900, streak: 8, totalDaysCompleted: 20, rank: 9, weeklyXp: 260 },
-  { uid: 'user-009', displayName: '즐공이서', avatarId: 'cat', grade: 4, level: 4, xp: 1600, streak: 5, totalDaysCompleted: 15, rank: 10, weeklyXp: 230 },
-];
-
 const avatarEmojis: Record<string, string> = {
   cat: '&#128049;',
   'default-cat': '&#128049;',
+  default: '&#128049;',
   dog: '&#128054;',
   rabbit: '&#128048;',
   bear: '&#128059;',
@@ -34,20 +22,31 @@ const avatarEmojis: Record<string, string> = {
   unicorn: '&#129412;',
 };
 
-const rankColors = ['', 'from-amber-400 to-amber-500', 'from-gray-300 to-gray-400', 'from-amber-600 to-amber-700'];
-const rankIcons = [null, <Crown key="1" className="w-5 h-5 text-white" />, <Medal key="2" className="w-5 h-5 text-white" />, <Award key="3" className="w-5 h-5 text-white" />];
-
 export default function RankingPage() {
   const user = useAuthStore((s) => s.user);
   const [period, setPeriod] = useState<PeriodTab>('weekly');
   const [gradeFilter, setGradeFilter] = useState<Grade | 'all'>('all');
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filteredLeaderboard = gradeFilter === 'all'
-    ? mockLeaderboard
-    : mockLeaderboard.filter((e) => e.grade === gradeFilter);
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams({ period });
+    if (gradeFilter !== 'all') params.set('grade', String(gradeFilter));
 
-  const top3 = filteredLeaderboard.slice(0, 3);
-  const rest = filteredLeaderboard.slice(3);
+    fetch(`/api/leaderboard?${params}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.entries) {
+          setLeaderboard(data.entries);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [period, gradeFilter]);
+
+  const top3 = leaderboard.slice(0, 3);
+  const rest = leaderboard.slice(3);
 
   return (
     <div className="min-h-screen bg-slate-50 pb-8">
@@ -162,6 +161,18 @@ export default function RankingPage() {
               </motion.div>
             </div>
           )}
+
+          {loading && (
+            <div className="text-center mt-6">
+              <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto" />
+            </div>
+          )}
+
+          {!loading && leaderboard.length === 0 && (
+            <div className="text-center mt-6 text-indigo-200 text-sm">
+              아직 참여한 학생이 없어요. 첫 번째 주인공이 되어보세요!
+            </div>
+          )}
         </div>
       </div>
 
@@ -181,17 +192,12 @@ export default function RankingPage() {
                 <Card className={isCurrentUser ? 'ring-2 ring-indigo-500' : ''}>
                   <CardBody className="p-3">
                     <div className="flex items-center gap-3">
-                      {/* Rank */}
                       <span className="w-8 text-center text-sm font-bold text-gray-400">
                         {entry.rank}
                       </span>
-
-                      {/* Avatar */}
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-100 to-indigo-200 flex items-center justify-center shrink-0">
                         <span className="text-xl" dangerouslySetInnerHTML={{ __html: avatarEmojis[entry.avatarId] || '&#128049;' }} />
                       </div>
-
-                      {/* Info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className={`text-sm font-bold truncate ${isCurrentUser ? 'text-indigo-600' : 'text-gray-900'}`}>
@@ -211,8 +217,6 @@ export default function RankingPage() {
                           </span>
                         </div>
                       </div>
-
-                      {/* XP */}
                       <div className="text-right shrink-0">
                         <p className="text-sm font-bold text-indigo-600">{entry.weeklyXp}</p>
                         <p className="text-[10px] text-gray-400">XP</p>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
@@ -15,7 +15,6 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { getLevelProgress, formatTimeKorean, getStreakMessage, calculateAccuracy } from '@/lib/utils';
 
 const weekDays = ['월', '화', '수', '목', '금', '토', '일'];
-const mockWeekCompletion = [true, true, true, true, true, false, false];
 
 function CircularProgress({ value, label, color }: { value: number; label: string; color: string }) {
   const radius = 36;
@@ -52,6 +51,32 @@ function CircularProgress({ value, label, color }: { value: number; label: strin
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
+  const [todayStatus, setTodayStatus] = useState<'not_started' | 'in_progress' | 'completed'>('not_started');
+  const [todaySessionId, setTodaySessionId] = useState<string | null>(null);
+  const [weekCompletion, setWeekCompletion] = useState<boolean[]>([false, false, false, false, false, false, false]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    fetch('/api/sessions/today')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success) {
+          setTodayStatus(data.status || 'not_started');
+          setTodaySessionId(data.sessionId || null);
+        }
+      })
+      .catch(() => {});
+
+    fetch('/api/sessions/weekly')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.weekCompletion) {
+          setWeekCompletion(data.weekCompletion);
+        }
+      })
+      .catch(() => {});
+  }, [user]);
 
   if (!user) {
     return (
@@ -68,7 +93,6 @@ export default function DashboardPage() {
   }
 
   const levelInfo = getLevelProgress(user.xp);
-  const [todayStatus] = useState<'not_started' | 'in_progress' | 'completed'>('not_started');
   const domainScores = user.stats.domainScores;
   const readingScore = calculateAccuracy(domainScores.reading.correctAnswers, domainScores.reading.totalQuestions);
   const literatureScore = calculateAccuracy(domainScores.literature.correctAnswers, domainScores.literature.totalQuestions);
@@ -155,7 +179,7 @@ export default function DashboardPage() {
                   <h2 className="text-lg font-bold text-gray-900 mb-1">
                     학습 중이에요! 이어서 할까요?
                   </h2>
-                  <Link href="/daily">
+                  <Link href={todaySessionId ? `/daily/${todaySessionId}` : '/daily'}>
                     <Button size="lg" className="w-full mt-3">
                       <Play className="w-5 h-5" />
                       이어서 학습하기
@@ -208,12 +232,12 @@ export default function DashboardPage() {
                     <span className="text-[10px] text-gray-400">{day}</span>
                     <div
                       className={`w-5 h-5 rounded-full flex items-center justify-center ${
-                        mockWeekCompletion[i]
+                        weekCompletion[i]
                           ? 'bg-emerald-500'
                           : 'bg-gray-200'
                       }`}
                     >
-                      {mockWeekCompletion[i] && (
+                      {weekCompletion[i] && (
                         <CheckCircle className="w-3 h-3 text-white" />
                       )}
                     </div>

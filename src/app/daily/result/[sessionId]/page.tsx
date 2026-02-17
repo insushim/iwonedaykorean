@@ -14,6 +14,7 @@ import Button from '@/components/ui/Button';
 import Card, { CardBody } from '@/components/ui/Card';
 import { useAuthStore } from '@/store/useAuthStore';
 import { formatTimeKorean, calculateAccuracy, getPerformanceRating } from '@/lib/utils';
+import type { DailySession, SessionPassage, SessionQuestion } from '@/types';
 
 interface DomainResult {
   label: string;
@@ -36,40 +37,24 @@ export default function ResultPage() {
   const sessionId = params.sessionId as string;
   const user = useAuthStore((s) => s.user);
   const [showWrongAnswers, setShowWrongAnswers] = useState(false);
-  const [showLevelUp, setShowLevelUp] = useState(false);
+  const [session, setSession] = useState<DailySession | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const totalCorrect = 10;
-  const totalQuestions = 14;
-  const firstTryCorrect = 8;
-  const timeSpent = 842;
-  const xpEarned = 150;
-  const coinsEarned = 35;
-
-  const accuracy = calculateAccuracy(totalCorrect, totalQuestions);
-  const firstTryAccuracy = calculateAccuracy(firstTryCorrect, totalQuestions);
-  const rating = getPerformanceRating(firstTryAccuracy);
-
-  const domainResults: DomainResult[] = [
-    { label: '비문학', icon: <BookOpen className="w-4 h-4" />, color: 'text-indigo-600', bgColor: 'bg-indigo-500', correct: 3, total: 3 },
-    { label: '문학', icon: <Feather className="w-4 h-4" />, color: 'text-emerald-600', bgColor: 'bg-emerald-500', correct: 2, total: 3 },
-    { label: '시', icon: <Music className="w-4 h-4" />, color: 'text-purple-600', bgColor: 'bg-purple-500', correct: 2, total: 2 },
-    { label: '문법', icon: <SpellCheck className="w-4 h-4" />, color: 'text-amber-600', bgColor: 'bg-amber-500', correct: 3, total: 4 },
-  ];
-
-  const mockWrongAnswers: WrongAnswer[] = [
-    {
-      question: '이 이야기에서 토끼가 깨달은 교훈은 무엇인가요?',
-      yourAnswer: '빨리 달리는 것이 가장 중요하다.',
-      correctAnswer: '모든 것을 잘하는 사람은 없고, 서로 다른 능력이 중요하다.',
-      explanation: '토끼가 마지막에 "모든 것을 잘하는 사람은 없구나. 서로 다른 능력이 중요한 거야."라고 깨달은 것이 이 이야기의 교훈입니다.',
-    },
-    {
-      question: '다음 중 높임말로 바르게 고친 것은?',
-      yourAnswer: '"밥 먹어." -> "밥 드세요."',
-      correctAnswer: '"밥 먹어." -> "밥 잡수세요."',
-      explanation: '"먹다"의 높임말은 "잡수시다/드시다"입니다. "밥 잡수세요"가 가장 바른 높임 표현입니다.',
-    },
-  ];
+  useEffect(() => {
+    fetch(`/api/generate-daily`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ grade: user?.grade || 3, semester: user?.semester || 1 }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.session) {
+          setSession(data.session);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [user?.grade, user?.semester]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -101,6 +86,86 @@ export default function ResultPage() {
       clearTimeout(timer2);
     };
   }, []);
+
+  // Compute stats from real session data or show defaults
+  const totalQuestions = session?.totalQuestions || 0;
+  const totalCorrect = session
+    ? session.passages.reduce(
+        (sum, p) => sum + p.questions.filter((q) => q.isCorrect === true).length,
+        0,
+      ) + session.grammarQuestions.filter((q) => q.isCorrect === true).length
+    : 0;
+  const firstTryCorrect = session?.correctOnFirstTry || 0;
+  const timeSpent = session?.timeSpentSeconds || 0;
+  const xpEarned = session?.xpEarned || 0;
+  const coinsEarned = session?.coinsEarned || 0;
+
+  const accuracy = calculateAccuracy(totalCorrect, totalQuestions);
+  const firstTryAccuracy = calculateAccuracy(firstTryCorrect, totalQuestions);
+  const rating = getPerformanceRating(firstTryAccuracy);
+
+  // Build domain results from session
+  const getDomainResult = (type: string, label: string, icon: React.ReactNode, color: string, bgColor: string): DomainResult => {
+    if (!session) return { label, icon, color, bgColor, correct: 0, total: 0 };
+    const passage = session.passages.find((p) => p.type === type);
+    if (!passage) return { label, icon, color, bgColor, correct: 0, total: 0 };
+    return {
+      label,
+      icon,
+      color,
+      bgColor,
+      correct: passage.questions.filter((q) => q.isCorrect === true).length,
+      total: passage.questions.length,
+    };
+  };
+
+  const domainResults: DomainResult[] = [
+    getDomainResult('nonfiction', '비문학', <BookOpen className="w-4 h-4" />, 'text-indigo-600', 'bg-indigo-500'),
+    getDomainResult('fiction', '문학', <Feather className="w-4 h-4" />, 'text-emerald-600', 'bg-emerald-500'),
+    getDomainResult('poetry', '시', <Music className="w-4 h-4" />, 'text-purple-600', 'bg-purple-500'),
+    {
+      label: '문법',
+      icon: <SpellCheck className="w-4 h-4" />,
+      color: 'text-amber-600',
+      bgColor: 'bg-amber-500',
+      correct: session?.grammarQuestions.filter((q) => q.isCorrect === true).length || 0,
+      total: session?.grammarQuestions.length || 0,
+    },
+  ];
+
+  // Extract wrong answers from session
+  const wrongAnswers: WrongAnswer[] = [];
+  if (session) {
+    const extractWrong = (questions: SessionQuestion[], choices?: SessionPassage['questions'][0]['choices']) => {
+      for (const q of questions) {
+        if (q.isCorrect === false && q.studentAnswer != null) {
+          const yourText = q.choices?.find((c) => c.number === q.studentAnswer)?.text || String(q.studentAnswer);
+          const correctText = q.choices?.find((c) => c.number === q.correctAnswer)?.text || String(q.correctAnswer);
+          wrongAnswers.push({
+            question: q.question,
+            yourAnswer: yourText,
+            correctAnswer: correctText,
+            explanation: q.wrongExplanations?.[q.studentAnswer] || q.explanation,
+          });
+        }
+      }
+    };
+    for (const p of session.passages) {
+      extractWrong(p.questions);
+    }
+    extractWrong(session.grammarQuestions);
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <div className="w-10 h-10 border-3 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mx-auto" />
+          <p className="mt-4 text-gray-500">결과를 불러오고 있어요...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-indigo-50 via-slate-50 to-slate-50 px-4 py-8">
@@ -194,7 +259,7 @@ export default function ResultPage() {
             <CardBody>
               <h3 className="text-sm font-bold text-gray-700 mb-3">영역별 결과</h3>
               <div className="space-y-3">
-                {domainResults.map((domain) => {
+                {domainResults.filter(d => d.total > 0).map((domain) => {
                   const pct = domain.total > 0 ? (domain.correct / domain.total) * 100 : 0;
                   return (
                     <div key={domain.label}>
@@ -224,7 +289,7 @@ export default function ResultPage() {
         </motion.div>
 
         {/* Wrong Answers Summary */}
-        {mockWrongAnswers.length > 0 && (
+        {wrongAnswers.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
@@ -237,7 +302,7 @@ export default function ResultPage() {
                   className="w-full flex items-center justify-between cursor-pointer"
                 >
                   <h3 className="text-sm font-bold text-gray-700">
-                    틀린 문제 ({mockWrongAnswers.length}개)
+                    틀린 문제 ({wrongAnswers.length}개)
                   </h3>
                   {showWrongAnswers ? (
                     <ChevronUp className="w-4 h-4 text-gray-500" />
@@ -252,7 +317,7 @@ export default function ResultPage() {
                     animate={{ opacity: 1, height: 'auto' }}
                     className="mt-3 space-y-3"
                   >
-                    {mockWrongAnswers.map((wrong, i) => (
+                    {wrongAnswers.map((wrong, i) => (
                       <div key={i} className="p-3 bg-red-50 rounded-xl border border-red-200">
                         <p className="text-sm font-medium text-gray-800 mb-2">{wrong.question}</p>
                         <div className="text-xs space-y-1">
