@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, Feather, Music, SpellCheck, Clock,
-  ChevronRight, ChevronDown, ChevronUp, Check, X,
+  ChevronRight, Check, X,
   RotateCcw, Sparkles,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
@@ -117,7 +117,7 @@ export default function QuizSessionPage() {
   const [showExplanation, setShowExplanation] = useState(false);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [timerSeconds, setTimerSeconds] = useState(0);
-  const [passageCollapsed, setPassageCollapsed] = useState(false);
+  const [readingMode, setReadingMode] = useState(true); // true = reading passage, false = answering questions
   const [xpPopup, setXpPopup] = useState<number | null>(null);
 
   useEffect(() => {
@@ -294,11 +294,14 @@ export default function QuizSessionPage() {
     if (nextIndex < sectionQuestions.length) {
       setCurrentQuestionIndex(nextIndex);
     } else {
+      // Move to next section
       const currentIdx = sections.indexOf(currentSection);
       for (let i = currentIdx + 1; i < sections.length; i++) {
         if (!isSectionComplete(sections[i])) {
           setCurrentSection(sections[i]);
           setCurrentQuestionIndex(0);
+          // Show passage first for non-grammar sections
+          setReadingMode(sections[i] !== 'grammar');
           return;
         }
       }
@@ -311,6 +314,8 @@ export default function QuizSessionPage() {
     setSelectedAnswer(null);
     setShowExplanation(false);
     setIsCorrect(null);
+    // Grammar has no passage, go straight to questions
+    setReadingMode(section !== 'grammar');
   };
 
   if (!user && !loadingSession) {
@@ -430,69 +435,83 @@ export default function QuizSessionPage() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 max-w-4xl mx-auto w-full">
-        <div className="flex flex-col lg:flex-row min-h-0">
-          {/* Passage (Left on desktop, Top on mobile) */}
-          {currentPassage && (
-            <div className="lg:w-1/2 lg:border-r lg:border-gray-200 bg-white">
-              {/* Mobile toggle */}
-              <button
-                onClick={() => setPassageCollapsed(!passageCollapsed)}
-                className="lg:hidden w-full flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200 cursor-pointer"
-              >
-                <span className="text-sm font-bold text-gray-700">
-                  {currentPassage.title}
-                </span>
-                {passageCollapsed ? (
-                  <ChevronDown className="w-4 h-4 text-gray-500" />
-                ) : (
-                  <ChevronUp className="w-4 h-4 text-gray-500" />
-                )}
-              </button>
-
-              <AnimatePresence>
-                {!passageCollapsed && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="overflow-hidden lg:!h-auto lg:!opacity-100"
-                  >
-                    <div className="p-4 lg:p-6 lg:max-h-[calc(100vh-160px)] lg:overflow-y-auto">
-                      <div className="hidden lg:block mb-3">
-                        <h2 className="text-lg font-bold text-gray-900">{currentPassage.title}</h2>
-                        <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium ${sectionConfig[currentSection].bgColor} ${sectionConfig[currentSection].color}`}>
-                          {sectionConfig[currentSection].label}
-                        </span>
-                      </div>
-                      <div className="prose prose-sm max-w-none">
-                        <p className="text-gray-800 leading-7 whitespace-pre-wrap text-[15px]">
-                          {currentPassage.content}
-                        </p>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          )}
-
-          {/* Question (Right on desktop, Bottom on mobile) */}
-          <div className={`flex-1 p-4 lg:p-6 ${currentPassage ? '' : 'lg:max-w-2xl lg:mx-auto'}`}>
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={currentQuestion.questionId}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.3 }}
-              >
-                {/* Question Number */}
-                {currentSection === 'grammar' && (
-                  <span className={`inline-block mb-2 px-2 py-0.5 rounded text-xs font-medium ${sectionConfig.grammar.bgColor} ${sectionConfig.grammar.color}`}>
-                    문법
+      <div className="flex-1 max-w-2xl mx-auto w-full">
+        <AnimatePresence mode="wait">
+          {/* ====== Reading Mode: Full-screen Passage ====== */}
+          {readingMode && currentPassage ? (
+            <motion.div
+              key={`reading-${currentSection}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, x: -30 }}
+              transition={{ duration: 0.3 }}
+              className="bg-white min-h-[calc(100vh-120px)]"
+            >
+              <div className="p-5 lg:p-8">
+                <div className="mb-4">
+                  <span className={`inline-block px-2.5 py-1 rounded-lg text-xs font-medium ${sectionConfig[currentSection].bgColor} ${sectionConfig[currentSection].color}`}>
+                    {sectionConfig[currentSection].icon}
+                    <span className="ml-1">{sectionConfig[currentSection].label}</span>
                   </span>
-                )}
+                  <h2 className="text-xl font-bold text-gray-900 mt-2">{currentPassage.title}</h2>
+                </div>
+
+                <div className="prose prose-sm max-w-none">
+                  <p className="text-gray-800 leading-8 whitespace-pre-wrap text-[15px] lg:text-base">
+                    {currentPassage.content}
+                  </p>
+                </div>
+
+                <div className="mt-8 pb-6">
+                  <Button
+                    onClick={() => setReadingMode(false)}
+                    className="w-full"
+                    size="lg"
+                  >
+                    <BookOpen className="w-5 h-5" />
+                    다 읽었어요! 문제 풀기
+                    <ChevronRight className="w-5 h-5" />
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+
+          ) : (
+            /* ====== Question Mode: Full-screen Questions ====== */
+            <motion.div
+              key={`question-${currentSection}`}
+              initial={{ opacity: 0, x: 30 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="min-h-[calc(100vh-120px)]"
+            >
+              {/* "지문 다시 보기" button when in question mode */}
+              {currentPassage && (
+                <button
+                  onClick={() => setReadingMode(true)}
+                  className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 bg-indigo-50 text-indigo-600 text-sm font-medium hover:bg-indigo-100 transition-colors cursor-pointer"
+                >
+                  <BookOpen className="w-4 h-4" />
+                  지문 다시 보기
+                </button>
+              )}
+
+              <div className="p-4 lg:p-6">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={currentQuestion.questionId}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    {/* Question Number */}
+                    {currentSection === 'grammar' && (
+                      <span className={`inline-block mb-2 px-2 py-0.5 rounded text-xs font-medium ${sectionConfig.grammar.bgColor} ${sectionConfig.grammar.color}`}>
+                        문법
+                      </span>
+                    )}
 
                 <h3 className="text-base font-bold text-gray-900 mb-4 leading-relaxed">
                   {currentQuestion.question}
@@ -654,8 +673,10 @@ export default function QuizSessionPage() {
                 </AnimatePresence>
               </motion.div>
             </AnimatePresence>
-          </div>
-        </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
