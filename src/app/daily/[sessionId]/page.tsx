@@ -11,10 +11,10 @@ import {
 import Button from '@/components/ui/Button';
 import ProgressBar from '@/components/ui/ProgressBar';
 import { useAuthStore } from '@/store/useAuthStore';
-import { SEED_PASSAGES, ALL_PASSAGES } from '@/data/passages';
+import { ALL_PASSAGES, SEED_PASSAGES } from '@/data/passages';
 import { SEED_QUESTIONS, getQuestionsByPassageId, getGrammarQuestions } from '@/data/questions';
 import { formatTime } from '@/lib/utils';
-import type { SessionPassage, SessionQuestion, DailySession, PassageType, Choice } from '@/types';
+import type { SessionPassage, SessionQuestion, DailySession, PassageType, Choice, Grade, Semester } from '@/types';
 
 type SectionType = 'nonfiction' | 'fiction' | 'poetry' | 'grammar';
 
@@ -25,14 +25,26 @@ const sectionConfig: Record<SectionType, { icon: React.ReactNode; label: string;
   grammar: { icon: <SpellCheck className="w-4 h-4" />, label: '문법', color: 'text-amber-600', bgColor: 'bg-amber-100' },
 };
 
-function buildMockSession(sessionId: string): DailySession {
-  const passages = ALL_PASSAGES.length > 0 ? ALL_PASSAGES : SEED_PASSAGES;
+function buildFallbackSession(sessionId: string, grade: Grade, semester: Semester): DailySession {
+  const allPassages = ALL_PASSAGES.length > 0 ? ALL_PASSAGES : SEED_PASSAGES;
 
-  const nonfictionPassage = passages.find((p) => p.type === 'nonfiction') || passages[0];
-  const fictionPassage = passages.find((p) => p.type === 'fiction') || passages[1];
-  const poetryPassage = passages.find((p) => p.type === 'poetry') || passages[2];
+  // Filter by exact grade+semester, then grade only, then grade group
+  const gradeGroup = grade <= 2 ? '1-2' : grade <= 4 ? '3-4' : '5-6';
 
-  const buildSessionPassage = (passage: typeof nonfictionPassage): SessionPassage => {
+  const findPassage = (type: PassageType) => {
+    return (
+      allPassages.find((p) => p.type === type && p.grade === grade && p.semester === semester) ||
+      allPassages.find((p) => p.type === type && p.grade === grade) ||
+      allPassages.find((p) => p.type === type && p.gradeGroup === gradeGroup) ||
+      null
+    );
+  };
+
+  const nonfictionPassage = findPassage('nonfiction');
+  const fictionPassage = findPassage('fiction');
+  const poetryPassage = findPassage('poetry');
+
+  const buildSessionPassage = (passage: NonNullable<ReturnType<typeof findPassage>>): SessionPassage => {
     const questions = getQuestionsByPassageId(passage.id);
     const fallbackQuestions = SEED_QUESTIONS.filter((q) => q.passageId !== '').slice(0, 2);
     const used = questions.length > 0 ? questions : fallbackQuestions;
@@ -54,11 +66,10 @@ function buildMockSession(sessionId: string): DailySession {
     };
   };
 
-  const sessionPassages = [
-    buildSessionPassage(nonfictionPassage),
-    buildSessionPassage(fictionPassage),
-    buildSessionPassage(poetryPassage),
-  ];
+  const sessionPassages: SessionPassage[] = [];
+  if (nonfictionPassage) sessionPassages.push(buildSessionPassage(nonfictionPassage));
+  if (fictionPassage) sessionPassages.push(buildSessionPassage(fictionPassage));
+  if (poetryPassage) sessionPassages.push(buildSessionPassage(poetryPassage));
 
   const grammar = getGrammarQuestions();
   const grammarQuestions: SessionQuestion[] = grammar.slice(0, 4).map((q) => ({
@@ -75,9 +86,9 @@ function buildMockSession(sessionId: string): DailySession {
 
   return {
     id: sessionId,
-    userId: 'mock-user-001',
-    grade: 3,
-    semester: 1,
+    userId: 'fallback-user',
+    grade,
+    semester,
     date: new Date().toISOString().split('T')[0],
     status: 'in_progress',
     passages: sessionPassages,
@@ -96,8 +107,10 @@ export default function QuizSessionPage() {
   const router = useRouter();
   const params = useParams();
   const sessionId = params.sessionId as string;
+  const { user } = useAuthStore();
 
   const [session, setSession] = useState<DailySession | null>(null);
+  const [loadingSession, setLoadingSession] = useState(true);
   const [currentSection, setCurrentSection] = useState<SectionType>('nonfiction');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
@@ -108,9 +121,44 @@ export default function QuizSessionPage() {
   const [xpPopup, setXpPopup] = useState<number | null>(null);
 
   useEffect(() => {
-    const mockSession = buildMockSession(sessionId);
-    setSession(mockSession);
-  }, [sessionId]);
+    const grade = (user?.grade ?? 3) as Grade;
+    const semester = (user?.semester ?? 1) as Semester;
+
+    let cancelled = false;
+
+    async function fetchSession() {
+      setLoadingSession(true);
+      try {
+        const res = await fetch('/api/generate-daily', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ grade, semester }),
+        });
+        if (!res.ok) throw new Error('API failed');
+        const data = await res.json();
+        if (!cancelled && data.success && data.session) {
+          const apiSession: DailySession = {
+            ...data.session,
+            status: 'in_progress',
+          };
+          setSession(apiSession);
+          setLoadingSession(false);
+          return;
+        }
+        throw new Error('Invalid response');
+      } catch {
+        // Fallback to local seed data filtered by grade
+        if (!cancelled) {
+          const fallback = buildFallbackSession(sessionId, grade, semester);
+          setSession(fallback);
+          setLoadingSession(false);
+        }
+      }
+    }
+
+    fetchSession();
+    return () => { cancelled = true; };
+  }, [sessionId, user?.grade, user?.semester]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -239,12 +287,17 @@ export default function QuizSessionPage() {
     setIsCorrect(null);
   };
 
-  if (!session || !currentQuestion) {
+  if (!session || !currentQuestion || loadingSession) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
           <div className="w-10 h-10 border-3 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mx-auto" />
-          <p className="mt-4 text-gray-500">학습을 준비하고 있어요...</p>
+          <p className="mt-4 text-gray-500">
+            {loadingSession ? 'AI가 맞춤 학습을 만들고 있어요...' : '학습을 준비하고 있어요...'}
+          </p>
+          {loadingSession && (
+            <p className="mt-1 text-xs text-gray-400">잠시만 기다려 주세요</p>
+          )}
         </div>
       </div>
     );

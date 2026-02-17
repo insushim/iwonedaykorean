@@ -14,7 +14,6 @@ import type {
   Question,
 } from '@/types';
 import {
-  SEED_PASSAGES,
   getPassagesByGradeGroup,
 } from '@/data/passages';
 import {
@@ -244,14 +243,14 @@ async function buildSessionFromGemini(
   grade: Grade,
   semester: Semester,
   date: string,
+  pastPassageTitles: string[] = [],
 ): Promise<DailySession> {
   const gradeGroup = getGradeGroup(grade);
   const standards = CURRICULUM_STANDARDS.filter(
     (s) => s.gradeGroup === gradeGroup,
   );
 
-  const existingPassageIds = SEED_PASSAGES.map((p) => p.id);
-  const result = await generateDailyQuiz(grade, semester, standards, existingPassageIds);
+  const result = await generateDailyQuiz(grade, semester, standards, pastPassageTitles);
 
   const passages: SessionPassage[] = result.passages.map((gp) => ({
     passageId: gp.id,
@@ -435,34 +434,61 @@ export async function POST(request: Request) {
     }
 
     // -----------------------------------------------------------------------
-    // Try to build session from seed data first
+    // Fetch past passage titles to prevent duplicates
     // -----------------------------------------------------------------------
 
-    let session = buildSessionFromSeed(userId, validGrade, validSemester, today);
+    let pastPassageTitles: string[] = [];
+    try {
+      const pastRows = await db
+        .prepare(
+          'SELECT passages_data FROM sessions WHERE user_id = ? ORDER BY date DESC LIMIT 30',
+        )
+        .bind(userId)
+        .all<{ passages_data: string }>();
 
-    // If seed data is insufficient, fall back to Gemini AI generation
-    if (!session || session.totalQuestions === 0) {
-      try {
-        session = await buildSessionFromGemini(
-          userId,
-          validGrade,
-          validSemester,
-          today,
-        );
-      } catch (geminiError) {
-        console.error('Gemini 생성 실패:', geminiError);
-
-        session = buildSessionFromSeed(userId, validGrade, validSemester, today);
-
-        if (!session) {
-          return Response.json(
-            {
-              success: false,
-              error: '오늘의 학습을 생성할 수 없습니다. 잠시 후 다시 시도해 주세요.',
-            },
-            { status: 500 },
-          );
+      if (pastRows.results) {
+        for (const row of pastRows.results) {
+          try {
+            const passages = JSON.parse(row.passages_data || '[]') as { title: string }[];
+            for (const p of passages) {
+              if (p.title) pastPassageTitles.push(p.title);
+            }
+          } catch {
+            // skip malformed rows
+          }
         }
+      }
+    } catch {
+      // If query fails, proceed without past titles
+    }
+
+    // -----------------------------------------------------------------------
+    // Try Gemini AI first, fall back to seed data
+    // -----------------------------------------------------------------------
+
+    let session: DailySession | null = null;
+
+    try {
+      session = await buildSessionFromGemini(
+        userId,
+        validGrade,
+        validSemester,
+        today,
+        pastPassageTitles,
+      );
+    } catch (geminiError) {
+      console.error('Gemini 생성 실패, 시드 데이터로 fallback:', geminiError);
+
+      session = buildSessionFromSeed(userId, validGrade, validSemester, today);
+
+      if (!session) {
+        return Response.json(
+          {
+            success: false,
+            error: '오늘의 학습을 생성할 수 없습니다. 잠시 후 다시 시도해 주세요.',
+          },
+          { status: 500 },
+        );
       }
     }
 
