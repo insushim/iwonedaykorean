@@ -181,6 +181,29 @@ export default function QuizSessionPage() {
 
   const currentQuestion = sectionQuestions[currentQuestionIndex] || null;
 
+  // Auto-advance to a section that has questions if current section is empty
+  useEffect(() => {
+    if (!session || loadingSession) return;
+    if (sectionQuestions.length > 0) return; // Current section has questions
+
+    // Find next section with questions
+    for (const s of sections) {
+      if (s === currentSection) continue;
+      let qs: SessionQuestion[] = [];
+      if (s === 'grammar') {
+        qs = session.grammarQuestions;
+      } else {
+        const p = session.passages.find((p) => p.type === (s as PassageType));
+        qs = p?.questions || [];
+      }
+      if (qs.length > 0) {
+        setCurrentSection(s);
+        setCurrentQuestionIndex(0);
+        return;
+      }
+    }
+  }, [session, loadingSession, currentSection, sectionQuestions.length]);
+
   const totalAnswered = useMemo(() => {
     if (!session) return 0;
     const passageAnswered = session.passages.reduce(
@@ -304,17 +327,49 @@ export default function QuizSessionPage() {
     );
   }
 
-  if (!session || !currentQuestion || loadingSession) {
+  if (loadingSession || !session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
           <div className="w-10 h-10 border-3 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mx-auto" />
-          <p className="mt-4 text-gray-500">
-            {loadingSession ? 'AI가 맞춤 학습을 만들고 있어요...' : '학습을 준비하고 있어요...'}
-          </p>
-          {loadingSession && (
-            <p className="mt-1 text-xs text-gray-400">잠시만 기다려 주세요</p>
-          )}
+          <p className="mt-4 text-gray-500">AI가 맞춤 학습을 만들고 있어요...</p>
+          <p className="mt-1 text-xs text-gray-400">잠시만 기다려 주세요</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentQuestion) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <div className="text-6xl mb-4">&#128049;</div>
+          <p className="text-gray-600 mb-2 font-bold">문제를 불러올 수 없어요</p>
+          <p className="text-gray-500 text-sm mb-4">다시 시도해 주세요.</p>
+          <button
+            onClick={() => {
+              setSession(null);
+              setLoadingSession(true);
+              setCurrentSection('nonfiction');
+              setCurrentQuestionIndex(0);
+              fetch('/api/generate-daily', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ grade: user?.grade ?? 3, semester: user?.semester ?? 1, forceNew: true }),
+              })
+                .then((r) => r.json())
+                .then((data) => {
+                  if (data.success && data.session) {
+                    setSession({ ...data.session, status: 'in_progress' as const });
+                  }
+                })
+                .catch(() => {})
+                .finally(() => setLoadingSession(false));
+            }}
+            className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors cursor-pointer"
+          >
+            다시 시도
+          </button>
         </div>
       </div>
     );

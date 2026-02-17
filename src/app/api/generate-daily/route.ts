@@ -15,6 +15,7 @@ import type {
 } from '@/types';
 import {
   getPassagesByGradeGroup,
+  ALL_PASSAGES as ALL_PASSAGES_DATA,
 } from '@/data/passages';
 import {
   getQuestionsByPassageId,
@@ -104,33 +105,44 @@ function selectPassagesFromSeed(
 ): { nonfiction: Passage | null; fiction: Passage | null; poetry: Passage | null } {
   const allPassages = getPassagesByGradeGroup(gradeGroup);
 
-  // Prefer passages matching exact grade/semester, fall back to grade group
-  const preferExact = (type: PassageType): Passage | null => {
-    const exactMatch = allPassages.filter(
-      (p) => p.type === type && p.grade === grade && p.semester === semester,
+  // Filter to only passages that have questions available
+  const hasQuestions = (p: Passage): boolean => {
+    return getQuestionsByPassageId(p.id).length > 0;
+  };
+
+  // Prefer passages matching exact grade/semester WITH questions, then broader
+  const preferExactWithQuestions = (type: PassageType): Passage | null => {
+    // 1. Exact grade+semester with questions
+    const exactWithQ = allPassages.filter(
+      (p) => p.type === type && p.grade === grade && p.semester === semester && hasQuestions(p),
     );
-    if (exactMatch.length > 0) {
-      return pickRandom(exactMatch, 1)[0];
-    }
-    // Fall back to same grade, any semester
-    const gradeMatch = allPassages.filter(
-      (p) => p.type === type && p.grade === grade,
+    if (exactWithQ.length > 0) return pickRandom(exactWithQ, 1)[0];
+
+    // 2. Same grade with questions
+    const gradeWithQ = allPassages.filter(
+      (p) => p.type === type && p.grade === grade && hasQuestions(p),
     );
-    if (gradeMatch.length > 0) {
-      return pickRandom(gradeMatch, 1)[0];
-    }
-    // Fall back to any passage in the grade group
-    const groupMatch = allPassages.filter((p) => p.type === type);
-    if (groupMatch.length > 0) {
-      return pickRandom(groupMatch, 1)[0];
-    }
+    if (gradeWithQ.length > 0) return pickRandom(gradeWithQ, 1)[0];
+
+    // 3. Same grade group with questions
+    const groupWithQ = allPassages.filter(
+      (p) => p.type === type && hasQuestions(p),
+    );
+    if (groupWithQ.length > 0) return pickRandom(groupWithQ, 1)[0];
+
+    // 4. ANY passage with questions (cross grade-group)
+    const anyWithQ = ALL_PASSAGES_DATA.filter(
+      (p) => p.type === type && hasQuestions(p),
+    );
+    if (anyWithQ.length > 0) return pickRandom(anyWithQ, 1)[0];
+
     return null;
   };
 
   return {
-    nonfiction: preferExact('nonfiction'),
-    fiction: preferExact('fiction'),
-    poetry: preferExact('poetry'),
+    nonfiction: preferExactWithQuestions('nonfiction'),
+    fiction: preferExactWithQuestions('fiction'),
+    poetry: preferExactWithQuestions('poetry'),
   };
 }
 
@@ -378,6 +390,7 @@ export async function POST(request: Request) {
       grade: number;
       semester: number;
     };
+    const forceNew = !!(body as { forceNew?: boolean }).forceNew;
 
     // Try to get authenticated user; fall back to userId from body
     const authUser = await getAuthUser(request);
@@ -420,17 +433,34 @@ export async function POST(request: Request) {
     // Check for existing session in D1 for this user + date
     // -----------------------------------------------------------------------
 
-    const existingRow = await db
-      .prepare('SELECT * FROM sessions WHERE user_id = ? AND date = ?')
-      .bind(userId, today)
-      .first<Record<string, unknown>>();
+    if (forceNew) {
+      // Delete existing session for today so we can regenerate
+      await db
+        .prepare('DELETE FROM sessions WHERE user_id = ? AND date = ?')
+        .bind(userId, today)
+        .run();
+    } else {
+      const existingRow = await db
+        .prepare('SELECT * FROM sessions WHERE user_id = ? AND date = ?')
+        .bind(userId, today)
+        .first<Record<string, unknown>>();
 
-    if (existingRow) {
-      const existingSession = rowToSession(existingRow);
-      return Response.json({
-        success: true,
-        session: existingSession,
-      });
+      if (existingRow) {
+        const existingSession = rowToSession(existingRow);
+        // Validate existing session has questions; if not, delete and regenerate
+        const totalPassageQ = existingSession.passages.reduce((s, p) => s + p.questions.length, 0);
+        if (totalPassageQ > 0) {
+          return Response.json({
+            success: true,
+            session: existingSession,
+          });
+        }
+        // Session has no passage questions - delete and regenerate
+        await db
+          .prepare('DELETE FROM sessions WHERE user_id = ? AND date = ?')
+          .bind(userId, today)
+          .run();
+      }
     }
 
     // -----------------------------------------------------------------------
@@ -476,6 +506,13 @@ export async function POST(request: Request) {
         today,
         pastPassageTitles,
       );
+
+      // Validate Gemini output has actual questions
+      const geminiPassageQ = session.passages.reduce((s, p) => s + p.questions.length, 0);
+      if (geminiPassageQ === 0) {
+        console.error('Gemini 생성 결과에 문제가 없음, 시드 데이터로 fallback');
+        throw new Error('Gemini output has no passage questions');
+      }
     } catch (geminiError) {
       console.error('Gemini 생성 실패, 시드 데이터로 fallback:', geminiError);
 
@@ -490,6 +527,19 @@ export async function POST(request: Request) {
           { status: 500 },
         );
       }
+    }
+
+    // Final validation: ensure session has passage questions
+    const totalPassageQ = session.passages.reduce((s, p) => s + p.questions.length, 0);
+    if (totalPassageQ === 0) {
+      // Passages have no questions - don't persist a broken session
+      return Response.json(
+        {
+          success: false,
+          error: '학습 문제를 생성할 수 없습니다. 잠시 후 다시 시도해 주세요.',
+        },
+        { status: 500 },
+      );
     }
 
     // -----------------------------------------------------------------------
