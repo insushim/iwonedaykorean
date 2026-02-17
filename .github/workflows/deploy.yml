@@ -29,7 +29,7 @@ jobs:
           echo "oauth_token = \"placeholder\"" > ~/.config/.wrangler/config/default.toml
           echo "expiration_time = \"2000-01-01T00:00:00.000Z\"" >> ~/.config/.wrangler/config/default.toml
           echo "refresh_token = \"$REFRESH_TOKEN\"" >> ~/.config/.wrangler/config/default.toml
-          echo 'scopes = [ "account:read", "user:read", "workers:write", "workers_kv:write", "workers_routes:write", "workers_scripts:write", "workers_tail:read", "d1:write", "pages:write", "zone:read", "ssl_certs:write", "ai:write", "ai-search:write", "ai-search:run", "queues:write", "pipelines:write", "secrets_store:write", "containers:write", "cloudchamber:write", "connectivity:admin", "offline_access" ]' >> ~/.config/.wrangler/config/default.toml
+          echo 'scopes = [ "account:read", "user:read", "workers:write", "workers_kv:write", "workers_routes:write", "workers_scripts:write", "workers_tail:read", "d1:write", "pages:write", "zone:read", "ssl_certs:write", "ai:write", "queues:write", "pipelines:write", "offline_access" ]' >> ~/.config/.wrangler/config/default.toml
         env:
           REFRESH_TOKEN: ${{ secrets.CLOUDFLARE_OAUTH_REFRESH_TOKEN }}
 
