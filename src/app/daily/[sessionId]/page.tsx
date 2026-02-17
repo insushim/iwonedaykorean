@@ -121,8 +121,11 @@ export default function QuizSessionPage() {
   const [xpPopup, setXpPopup] = useState<number | null>(null);
 
   useEffect(() => {
-    const grade = (user?.grade ?? 3) as Grade;
-    const semester = (user?.semester ?? 1) as Semester;
+    // Wait for user to be loaded before calling API to avoid wrong grade
+    if (!user) return;
+
+    const grade = user.grade as Grade;
+    const semester = user.semester as Semester;
 
     let cancelled = false;
 
@@ -158,7 +161,7 @@ export default function QuizSessionPage() {
 
     fetchSession();
     return () => { cancelled = true; };
-  }, [sessionId, user?.grade, user?.semester]);
+  }, [sessionId, user]);
 
   useEffect(() => {
     const interval = setInterval(() => {

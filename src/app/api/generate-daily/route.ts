@@ -392,13 +392,13 @@ export async function POST(request: Request) {
     };
     const forceNew = !!(body as { forceNew?: boolean }).forceNew;
 
-    // Try to get authenticated user; fall back to userId from body
+    // Try to get authenticated user; always prefer their profile data
     const authUser = await getAuthUser(request);
     if (authUser) {
       userId = authUser.uid;
-      // Use the authenticated user's grade/semester if not explicitly provided
-      if (!grade) grade = authUser.grade;
-      if (!semester) semester = authUser.semester;
+      // Always use the authenticated user's grade/semester
+      grade = authUser.grade;
+      semester = authUser.semester;
     }
 
     // Input validation
