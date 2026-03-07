@@ -106,6 +106,7 @@ async function buildSessionFromContentPool(
     semester,
     date,
     pastPassageTitles,
+    userId,
   );
 
   if (!daily.nonfiction && !daily.fiction && !daily.poetry) {

@@ -197,6 +197,7 @@ export async function selectDailyContent(
   semester: Semester,
   dateStr: string,
   pastPassageTitles: string[] = [],
+  userId: string = "",
 ): Promise<DailyContent> {
   const gradeGroup = getGradeGroup(grade);
 
@@ -235,7 +236,10 @@ export async function selectDailyContent(
     );
     const targetPool = unused.length > 0 ? unused : pool;
 
-    const typeHash = dateHash(dateStr, `${grade}-${semester}-${typeSalt}`);
+    const typeHash = dateHash(
+      dateStr,
+      `${grade}-${semester}-${typeSalt}-${userId}`,
+    );
     const index = typeHash % targetPool.length;
     return targetPool[index];
   };

@@ -1,19 +1,31 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
+import React, { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import {
-  ArrowLeft, Settings, LogOut, ChevronRight, Edit3,
-  Volume2, VolumeX, ShoppingBag, Users, Copy, Check,
-  Flame, Trophy, Target, BookOpen,
-} from 'lucide-react';
-import Button from '@/components/ui/Button';
-import Card, { CardBody } from '@/components/ui/Card';
-import { useAuthStore } from '@/store/useAuthStore';
-import { getLevelProgress, getGradeLabel, getSemesterLabel } from '@/lib/utils';
-import type { Grade, Semester } from '@/types';
+  ArrowLeft,
+  Settings,
+  LogOut,
+  ChevronRight,
+  Edit3,
+  Volume2,
+  VolumeX,
+  ShoppingBag,
+  Users,
+  Copy,
+  Check,
+  Flame,
+  Trophy,
+  Target,
+  BookOpen,
+} from "lucide-react";
+import Button from "@/components/ui/Button";
+import Card, { CardBody } from "@/components/ui/Card";
+import { useAuthStore } from "@/store/useAuthStore";
+import { getLevelProgress, getGradeLabel, getSemesterLabel } from "@/lib/utils";
+import type { Grade, Semester } from "@/types";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -22,9 +34,9 @@ export default function ProfilePage() {
 
   const [soundOn, setSoundOn] = useState(true);
   const [editingName, setEditingName] = useState(false);
-  const [newName, setNewName] = useState(user?.displayName || '');
+  const [newName, setNewName] = useState(user?.displayName || "");
   const [editingGrade, setEditingGrade] = useState(false);
-  const [inviteCode, setInviteCode] = useState('');
+  const [inviteCode, setInviteCode] = useState("");
   const [codeCopied, setCodeCopied] = useState(false);
 
   if (!user) {
@@ -46,12 +58,58 @@ export default function ProfilePage() {
 
   const handleLogout = async () => {
     await logout();
-    router.push('/');
+    router.push("/");
   };
 
-  const handleSaveName = () => {
-    if (newName.trim().length >= 2) {
+  const handleSaveName = async () => {
+    const name = newName.trim();
+    if (name.length < 2) return;
+    try {
+      const res = await fetch("/api/auth/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName: name }),
+      });
+      const data = await res.json();
+      if (data.success && data.user) {
+        useAuthStore.getState().updateUser(data.user);
+      }
       setEditingName(false);
+    } catch {
+      // silently fail
+      setEditingName(false);
+    }
+  };
+
+  const handleChangeGrade = async (g: Grade) => {
+    try {
+      const res = await fetch("/api/auth/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ grade: g }),
+      });
+      const data = await res.json();
+      if (data.success && data.user) {
+        useAuthStore.getState().updateUser(data.user);
+      }
+    } catch {
+      /* silently fail */
+    }
+  };
+
+  const handleChangeSemester = async (s: Semester) => {
+    try {
+      const res = await fetch("/api/auth/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ semester: s }),
+      });
+      const data = await res.json();
+      if (data.success && data.user) {
+        useAuthStore.getState().updateUser(data.user);
+      }
+    } catch {
+      /* silently fail */
     }
   };
 
@@ -72,7 +130,10 @@ export default function ProfilePage() {
       <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 text-white px-4 pt-4 pb-8 rounded-b-3xl">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center justify-between mb-6">
-            <Link href="/dashboard" className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+            <Link
+              href="/dashboard"
+              className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+            >
               <ArrowLeft className="w-5 h-5 text-white" />
             </Link>
             <h1 className="text-lg font-bold">프로필</h1>
@@ -145,7 +206,9 @@ export default function ProfilePage() {
                 <div className="w-8 h-8 mx-auto rounded-lg bg-indigo-100 flex items-center justify-center mb-1">
                   <BookOpen className="w-4 h-4 text-indigo-500" />
                 </div>
-                <p className="text-lg font-bold text-gray-900">{user.totalDaysCompleted}</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {user.totalDaysCompleted}
+                </p>
                 <p className="text-[10px] text-gray-500">학습일</p>
               </div>
               <div>
@@ -159,7 +222,9 @@ export default function ProfilePage() {
                 <div className="w-8 h-8 mx-auto rounded-lg bg-amber-100 flex items-center justify-center mb-1">
                   <Trophy className="w-4 h-4 text-amber-500" />
                 </div>
-                <p className="text-lg font-bold text-gray-900">{user.badges.length}</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {user.badges.length}
+                </p>
                 <p className="text-[10px] text-gray-500">뱃지</p>
               </div>
             </div>
@@ -176,10 +241,14 @@ export default function ProfilePage() {
             >
               <div className="flex items-center gap-3">
                 <Settings className="w-5 h-5 text-gray-400" />
-                <span className="text-sm font-medium text-gray-800">학년/학기 변경</span>
+                <span className="text-sm font-medium text-gray-800">
+                  학년/학기 변경
+                </span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="text-sm text-gray-500">{getGradeLabel(user.grade)} {getSemesterLabel(user.semester)}</span>
+                <span className="text-sm text-gray-500">
+                  {getGradeLabel(user.grade)} {getSemesterLabel(user.semester)}
+                </span>
                 <ChevronRight className="w-4 h-4 text-gray-400" />
               </div>
             </button>
@@ -190,8 +259,11 @@ export default function ProfilePage() {
                   {([1, 2, 3, 4, 5, 6] as Grade[]).map((g) => (
                     <button
                       key={g}
+                      onClick={() => handleChangeGrade(g)}
                       className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        user.grade === g ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        user.grade === g
+                          ? "bg-indigo-600 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                       }`}
                     >
                       {g}학년
@@ -202,8 +274,11 @@ export default function ProfilePage() {
                   {([1, 2] as Semester[]).map((s) => (
                     <button
                       key={s}
+                      onClick={() => handleChangeSemester(s)}
                       className={`py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        user.semester === s ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        user.semester === s
+                          ? "bg-emerald-600 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                       }`}
                     >
                       {s}학기
@@ -228,11 +303,13 @@ export default function ProfilePage() {
                 )}
                 <span className="text-sm font-medium text-gray-800">소리</span>
               </div>
-              <div className={`w-11 h-6 rounded-full transition-colors ${soundOn ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+              <div
+                className={`w-11 h-6 rounded-full transition-colors ${soundOn ? "bg-indigo-600" : "bg-gray-300"}`}
+              >
                 <motion.div
                   className="w-5 h-5 rounded-full bg-white shadow mt-0.5"
                   animate={{ x: soundOn ? 22 : 2 }}
-                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
                 />
               </div>
             </button>
@@ -240,13 +317,20 @@ export default function ProfilePage() {
             <div className="border-t border-gray-100" />
 
             {/* Coin Shop */}
-            <Link href="#" className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
+            <Link
+              href="#"
+              className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors"
+            >
               <div className="flex items-center gap-3">
                 <ShoppingBag className="w-5 h-5 text-gray-400" />
-                <span className="text-sm font-medium text-gray-800">코인 상점</span>
+                <span className="text-sm font-medium text-gray-800">
+                  코인 상점
+                </span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="text-sm font-bold text-amber-600">{user.coins} 코인</span>
+                <span className="text-sm font-bold text-amber-600">
+                  {user.coins} 코인
+                </span>
                 <ChevronRight className="w-4 h-4 text-gray-400" />
               </div>
             </Link>
@@ -258,13 +342,20 @@ export default function ProfilePage() {
           <CardBody>
             <div className="flex items-center gap-3 mb-3">
               <Users className="w-5 h-5 text-gray-400" />
-              <span className="text-sm font-bold text-gray-800">학부모 연동</span>
+              <span className="text-sm font-bold text-gray-800">
+                학부모 연동
+              </span>
             </div>
             <p className="text-xs text-gray-500 mb-3">
               초대 코드를 생성하여 학부모님과 학습 현황을 공유하세요.
             </p>
             {!inviteCode ? (
-              <Button variant="outline" size="sm" onClick={handleGenerateInviteCode} className="w-full">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleGenerateInviteCode}
+                className="w-full"
+              >
                 초대 코드 생성
               </Button>
             ) : (
@@ -276,7 +367,11 @@ export default function ProfilePage() {
                   onClick={handleCopyCode}
                   className="p-2 rounded-lg bg-indigo-100 text-indigo-600 hover:bg-indigo-200 transition-colors cursor-pointer"
                 >
-                  {codeCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {codeCopied ? (
+                    <Check className="w-4 h-4" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
                 </button>
               </div>
             )}
@@ -284,11 +379,7 @@ export default function ProfilePage() {
         </Card>
 
         {/* Logout */}
-        <Button
-          variant="danger"
-          onClick={handleLogout}
-          className="w-full"
-        >
+        <Button variant="danger" onClick={handleLogout} className="w-full">
           <LogOut className="w-4 h-4" />
           로그아웃
         </Button>
