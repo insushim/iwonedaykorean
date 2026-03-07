@@ -4,7 +4,7 @@
 // Server-side only: uses GEMINI_API_KEY from process.env
 // =============================================================================
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import type {
   Grade,
   Semester,
@@ -12,7 +12,7 @@ import type {
   Passage,
   Question,
   GradeGroup,
-} from '@/types';
+} from "@/types";
 
 // ---------------------------------------------------------------------------
 // Client Initialization
@@ -21,14 +21,14 @@ import type {
 function getGeminiClient(): GoogleGenerativeAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is not set');
+    throw new Error("GEMINI_API_KEY environment variable is not set");
   }
   return new GoogleGenerativeAI(apiKey);
 }
 
 function getModel() {
   const client = getGeminiClient();
-  return client.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+  return client.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 }
 
 // ---------------------------------------------------------------------------
@@ -37,19 +37,25 @@ function getModel() {
 
 function getWordCountRangeByGrade(grade: Grade): { min: number; max: number } {
   switch (grade) {
-    case 1: return { min: 80, max: 150 };
-    case 2: return { min: 120, max: 200 };
-    case 3: return { min: 200, max: 350 };
-    case 4: return { min: 300, max: 500 };
-    case 5: return { min: 500, max: 800 };
-    case 6: return { min: 700, max: 1100 };
+    case 1:
+      return { min: 80, max: 150 };
+    case 2:
+      return { min: 120, max: 200 };
+    case 3:
+      return { min: 200, max: 350 };
+    case 4:
+      return { min: 300, max: 500 };
+    case 5:
+      return { min: 500, max: 800 };
+    case 6:
+      return { min: 700, max: 1100 };
   }
 }
 
 function getGradeGroupFromGrade(grade: Grade): GradeGroup {
-  if (grade <= 2) return '1-2';
-  if (grade <= 4) return '3-4';
-  return '5-6';
+  if (grade <= 2) return "1-2";
+  if (grade <= 4) return "3-4";
+  return "5-6";
 }
 
 function getGradeGuide(grade: Grade): string {
@@ -105,7 +111,7 @@ function getGradeGuide(grade: Grade): string {
 
 export interface GeneratedPassage {
   id: string;
-  type: 'nonfiction' | 'fiction' | 'poetry';
+  type: "nonfiction" | "fiction" | "poetry";
   title: string;
   author?: string;
   content: string;
@@ -116,19 +122,19 @@ export interface GeneratedPassage {
 export interface GeneratedQuestion {
   id: string;
   questionNumber: number;
-  type: 'multiple_choice';
+  type: "multiple_choice";
   question: string;
   choices: { number: number; text: string }[];
   correctAnswer: 1 | 2 | 3 | 4;
   explanation: string;
   wrongExplanations: Record<number, string>;
   relatedStandard: string;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: "easy" | "medium" | "hard";
   category: string;
 }
 
 export interface GeneratedGrammarQuestion extends GeneratedQuestion {
-  domain: 'grammar';
+  domain: "grammar";
 }
 
 export interface DailyQuizResult {
@@ -148,20 +154,22 @@ export async function generateDailyQuiz(
   grade: Grade,
   semester: Semester,
   standards: CurriculumStandard[],
-  pastPassageTitles: string[] = []
+  pastPassageTitles: string[] = [],
 ): Promise<DailyQuizResult> {
   const model = getModel();
   const gradeGroup = getGradeGroupFromGrade(grade);
   const wordCountRange = getWordCountRangeByGrade(grade);
   const gradeGuide = getGradeGuide(grade);
 
-  const readingStandards = standards.filter((s) => s.domain === 'reading');
-  const literatureStandards = standards.filter((s) => s.domain === 'literature');
-  const grammarStandards = standards.filter((s) => s.domain === 'grammar');
+  const readingStandards = standards.filter((s) => s.domain === "reading");
+  const literatureStandards = standards.filter(
+    (s) => s.domain === "literature",
+  );
+  const grammarStandards = standards.filter((s) => s.domain === "grammar");
 
   const standardsList = standards
     .map((s) => `- [${s.id}] ${s.title}: ${s.description}`)
-    .join('\n');
+    .join("\n");
 
   const prompt = `당신은 대한민국 초등학교 ${grade}학년 ${semester}학기 국어 교과서 집필진 수준의 전문가입니다.
 아래 교육과정 성취기준과 학년별 가이드에 **정확히** 맞는 하루 분량의 국어 학습 퀴즈를 생성해주세요.
@@ -200,14 +208,14 @@ ${standardsList}
    - ${grade}학년 교과서 수준의 어휘와 문장 구조 사용
    - **위 "비문학 교과 연계 주제풀"에서 주제를 선택**하되, 매번 다른 주제를 골라 학생의 배경지식을 넓혀주세요
    - 읽기만 해도 새로운 지식을 얻을 수 있도록 **구체적인 사실, 수치, 사례**를 포함하세요
-   - 관련 성취기준: ${readingStandards.map((s) => s.id).join(', ') || '읽기 관련 성취기준'}
+   - 관련 성취기준: ${readingStandards.map((s) => s.id).join(", ") || "읽기 관련 성취기준"}
 
 2. **문학 지문 1개**: 동화, 동시, 또는 수필 (문학 영역)
    - **${wordCountRange.min}~${wordCountRange.max}자** 분량 (이 범위를 반드시 준수)
    - ${grade}학년 수준에 적합한 문학 작품
    - **읽는 재미가 있으면서도, 자연스럽게 삶의 지혜나 가치관을 느낄 수 있는 이야기**를 쓰세요
    - 등장인물에게 감정이입할 수 있도록 생생한 묘사와 대화를 활용하세요
-   - 관련 성취기준: ${literatureStandards.map((s) => s.id).join(', ') || '문학 관련 성취기준'}
+   - 관련 성취기준: ${literatureStandards.map((s) => s.id).join(", ") || "문학 관련 성취기준"}
 
 ### 문제 (Questions)
 1. **각 지문당 3문제** (총 6문제)
@@ -216,7 +224,7 @@ ${standardsList}
    - 비판적/창의적 이해 문제 1개
 
 2. **문법 문제 2문제** (지문 없이 독립)
-   - 관련 성취기준: ${grammarStandards.map((s) => s.id).join(', ') || '문법 관련 성취기준'}
+   - 관련 성취기준: ${grammarStandards.map((s) => s.id).join(", ") || "문법 관련 성취기준"}
    - 맞춤법, 띄어쓰기, 문장 성분, 품사 등
    - ${grade}학년 교육과정에서 다루는 문법 내용만 출제
 
@@ -240,12 +248,16 @@ ${standardsList}
 - "문법" - 맞춤법, 띄어쓰기, 문장 구조
 - "작문" - 글쓰기 관련 지식
 
-${pastPassageTitles.length > 0 ? `### 중복 방지 (매우 중요!)
+${
+  pastPassageTitles.length > 0
+    ? `### 중복 방지 (매우 중요!)
 이 학생이 이전에 학습한 지문 제목 목록입니다. 아래 주제와 **동일하거나 유사한 주제의 지문은 절대 생성하지 마세요.**
 반드시 완전히 새로운 주제와 소재를 사용하세요.
 
 이전 지문 제목:
-${pastPassageTitles.map((t) => `- "${t}"`).join('\n')}` : ''}
+${pastPassageTitles.map((t) => `- "${t}"`).join("\n")}`
+    : ""
+}
 
 ## 출력 형식 (반드시 아래 JSON 형식을 따라주세요)
 
@@ -326,7 +338,10 @@ ${pastPassageTitles.map((t) => `- "${t}"`).join('\n')}` : ''}
   const text = response.text();
 
   // Parse JSON response, stripping any markdown code fences if present
-  const jsonText = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+  const jsonText = text
+    .replace(/```json\s*/g, "")
+    .replace(/```\s*/g, "")
+    .trim();
   const parsed = JSON.parse(jsonText) as DailyQuizResult;
 
   return parsed;
@@ -348,7 +363,7 @@ export async function generateExplanation(
   question: string,
   correctAnswer: string,
   studentAnswer: string,
-  grade: Grade
+  grade: Grade,
 ): Promise<string> {
   const model = getModel();
 
@@ -393,13 +408,13 @@ ${correctAnswer}
 export async function generateHint(
   question: string,
   passageContent: string | null,
-  grade: Grade
+  grade: Grade,
 ): Promise<string> {
   const model = getModel();
 
   const passageSection = passageContent
     ? `\n## 관련 지문\n${passageContent}\n`
-    : '';
+    : "";
 
   const prompt = `당신은 초등학교 ${grade}학년 학생을 가르치는 국어 선생님입니다.
 
@@ -413,6 +428,51 @@ ${question}
 2. 문제를 풀기 위한 사고 방향을 제시하세요.
 3. ${grade}학년 수준의 쉬운 말로 작성하세요.
 4. 1~2문장으로 간결하게 작성하세요.`;
+
+  const result = await model.generateContent(prompt);
+  const response = result.response;
+  return response.text();
+}
+
+// ---------------------------------------------------------------------------
+// Generate Socratic Guide (소크라테스식 질문 유도) - 오답 시 첫 번째 시도
+// ---------------------------------------------------------------------------
+
+/**
+ * 학생이 오답을 선택했을 때, 답을 바로 주지 않고
+ * 질문을 통해 스스로 정답을 찾도록 유도합니다.
+ * (Khanmigo 스타일)
+ */
+export async function generateSocraticGuide(
+  question: string,
+  studentAnswer: string,
+  passageContent: string | null,
+  grade: Grade,
+): Promise<string> {
+  const model = getModel();
+
+  const passageSection = passageContent
+    ? `\n## 관련 지문\n${passageContent}\n`
+    : "";
+
+  const prompt = `당신은 소크라테스식 질문법을 사용하는 초등학교 ${grade}학년 국어 선생님입니다.
+
+학생이 문제에서 틀린 답을 골랐습니다. 정답을 절대 알려주지 마세요!
+대신, 학생이 스스로 다시 생각해볼 수 있도록 질문을 던져주세요.
+${passageSection}
+## 문제
+${question}
+
+## 학생이 고른 답
+${studentAnswer}
+
+## 규칙
+1. 정답이나 정답의 힌트를 직접 말하지 마세요.
+2. 학생의 선택에 대해 "왜 그렇게 생각했어?" 같은 질문을 던져주세요.
+3. 지문의 특정 부분을 다시 읽어보라고 안내해도 좋습니다.
+4. ${grade}학년이 이해할 수 있는 쉬운 말로 작성하세요.
+5. 따뜻하고 격려하는 톤으로 1~2문장만 작성하세요.
+6. "다시 한번 생각해 볼까?" 같은 격려로 마무리하세요.`;
 
   const result = await model.generateContent(prompt);
   const response = result.response;

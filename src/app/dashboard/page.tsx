@@ -1,22 +1,49 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from "react";
+import Link from "next/link";
+import { motion } from "framer-motion";
 import {
-  Flame, Play, CheckCircle, Clock, Trophy, Star,
-  BookOpen, Feather, SpellCheck, ChevronRight,
-  Home, BarChart3, Award, User as UserIcon,
-} from 'lucide-react';
-import Button from '@/components/ui/Button';
-import Card, { CardBody } from '@/components/ui/Card';
-import ProgressBar from '@/components/ui/ProgressBar';
-import { useAuthStore } from '@/store/useAuthStore';
-import { getLevelProgress, formatTimeKorean, getStreakMessage, calculateAccuracy } from '@/lib/utils';
+  Flame,
+  Play,
+  CheckCircle,
+  Clock,
+  Trophy,
+  Star,
+  BookOpen,
+  Feather,
+  SpellCheck,
+  ChevronRight,
+  Home,
+  BarChart3,
+  Award,
+  User as UserIcon,
+  MessageCircle,
+} from "lucide-react";
+import type { DailyExpression } from "@/data/daily-expressions";
+import type { DailyChallenge } from "@/data/daily-challenges";
+import Button from "@/components/ui/Button";
+import Card, { CardBody } from "@/components/ui/Card";
+import ProgressBar from "@/components/ui/ProgressBar";
+import { useAuthStore } from "@/store/useAuthStore";
+import {
+  getLevelProgress,
+  formatTimeKorean,
+  getStreakMessage,
+  calculateAccuracy,
+} from "@/lib/utils";
 
-const weekDays = ['월', '화', '수', '목', '금', '토', '일'];
+const weekDays = ["월", "화", "수", "목", "금", "토", "일"];
 
-function CircularProgress({ value, label, color }: { value: number; label: string; color: string }) {
+function CircularProgress({
+  value,
+  label,
+  color,
+}: {
+  value: number;
+  label: string;
+  color: string;
+}) {
   const radius = 36;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (value / 100) * circumference;
@@ -25,7 +52,14 @@ function CircularProgress({ value, label, color }: { value: number; label: strin
     <div className="flex flex-col items-center gap-1.5">
       <div className="relative w-20 h-20">
         <svg className="w-full h-full -rotate-90" viewBox="0 0 80 80">
-          <circle cx="40" cy="40" r={radius} stroke="#E5E7EB" strokeWidth="6" fill="none" />
+          <circle
+            cx="40"
+            cy="40"
+            r={radius}
+            stroke="#E5E7EB"
+            strokeWidth="6"
+            fill="none"
+          />
           <motion.circle
             cx="40"
             cy="40"
@@ -36,7 +70,7 @@ function CircularProgress({ value, label, color }: { value: number; label: strin
             strokeLinecap="round"
             initial={{ strokeDashoffset: circumference }}
             animate={{ strokeDashoffset }}
-            transition={{ duration: 1, ease: 'easeOut' }}
+            transition={{ duration: 1, ease: "easeOut" }}
             style={{ strokeDasharray: circumference }}
           />
         </svg>
@@ -51,28 +85,59 @@ function CircularProgress({ value, label, color }: { value: number; label: strin
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
-  const [todayStatus, setTodayStatus] = useState<'not_started' | 'in_progress' | 'completed'>('not_started');
+  const [todayStatus, setTodayStatus] = useState<
+    "not_started" | "in_progress" | "completed"
+  >("not_started");
   const [todaySessionId, setTodaySessionId] = useState<string | null>(null);
-  const [weekCompletion, setWeekCompletion] = useState<boolean[]>([false, false, false, false, false, false, false]);
+  const [weekCompletion, setWeekCompletion] = useState<boolean[]>([
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+  ]);
+  const [dailyExpression, setDailyExpression] =
+    useState<DailyExpression | null>(null);
+  const [dailyChallenges, setDailyChallenges] = useState<DailyChallenge[]>([]);
 
   useEffect(() => {
     if (!user) return;
 
-    fetch('/api/sessions/today')
+    fetch("/api/sessions/today")
       .then((r) => r.json())
       .then((data) => {
         if (data.success) {
-          setTodayStatus(data.status || 'not_started');
+          setTodayStatus(data.status || "not_started");
           setTodaySessionId(data.sessionId || null);
         }
       })
       .catch(() => {});
 
-    fetch('/api/sessions/weekly')
+    fetch("/api/sessions/weekly")
       .then((r) => r.json())
       .then((data) => {
         if (data.success && data.weekCompletion) {
           setWeekCompletion(data.weekCompletion);
+        }
+      })
+      .catch(() => {});
+
+    fetch("/api/daily-expression")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.expression) {
+          setDailyExpression(data.expression);
+        }
+      })
+      .catch(() => {});
+
+    fetch("/api/daily-challenges")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.challenges) {
+          setDailyChallenges(data.challenges);
         }
       })
       .catch(() => {});
@@ -94,9 +159,18 @@ export default function DashboardPage() {
 
   const levelInfo = getLevelProgress(user.xp);
   const domainScores = user.stats.domainScores;
-  const readingScore = calculateAccuracy(domainScores.reading.correctAnswers, domainScores.reading.totalQuestions);
-  const literatureScore = calculateAccuracy(domainScores.literature.correctAnswers, domainScores.literature.totalQuestions);
-  const grammarScore = calculateAccuracy(domainScores.grammar.correctAnswers, domainScores.grammar.totalQuestions);
+  const readingScore = calculateAccuracy(
+    domainScores.reading.correctAnswers,
+    domainScores.reading.totalQuestions,
+  );
+  const literatureScore = calculateAccuracy(
+    domainScores.literature.correctAnswers,
+    domainScores.literature.totalQuestions,
+  );
+  const grammarScore = calculateAccuracy(
+    domainScores.grammar.correctAnswers,
+    domainScores.grammar.totalQuestions,
+  );
 
   const recentBadges = user.badges.slice(-3);
 
@@ -108,7 +182,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-3">
             <motion.div
               animate={{ y: [0, -4, 0] }}
-              transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+              transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
               className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center"
             >
               <span className="text-3xl">&#128049;</span>
@@ -127,14 +201,16 @@ export default function DashboardPage() {
           <div className="mt-4">
             <div className="flex justify-between text-xs text-indigo-200 mb-1">
               <span>Lv.{levelInfo.currentLevel}</span>
-              <span>{user.xp} / {levelInfo.nextLevelXP} XP</span>
+              <span>
+                {user.xp} / {levelInfo.nextLevelXP} XP
+              </span>
             </div>
             <div className="w-full h-2.5 rounded-full bg-white/20 overflow-hidden">
               <motion.div
                 className="h-full rounded-full bg-amber-400"
                 initial={{ width: 0 }}
                 animate={{ width: `${levelInfo.progress}%` }}
-                transition={{ duration: 1, ease: 'easeOut' }}
+                transition={{ duration: 1, ease: "easeOut" }}
               />
             </div>
           </div>
@@ -150,7 +226,7 @@ export default function DashboardPage() {
         >
           <Card variant="elevated">
             <CardBody>
-              {todayStatus === 'not_started' && (
+              {todayStatus === "not_started" && (
                 <div className="text-center py-2">
                   <motion.div
                     animate={{ scale: [1, 1.05, 1] }}
@@ -173,13 +249,17 @@ export default function DashboardPage() {
                   </Link>
                 </div>
               )}
-              {todayStatus === 'in_progress' && (
+              {todayStatus === "in_progress" && (
                 <div className="text-center py-2">
                   <div className="text-5xl mb-3">&#128049;</div>
                   <h2 className="text-lg font-bold text-gray-900 mb-1">
                     학습 중이에요! 이어서 할까요?
                   </h2>
-                  <Link href={todaySessionId ? `/daily/${todaySessionId}` : '/daily'}>
+                  <Link
+                    href={
+                      todaySessionId ? `/daily/${todaySessionId}` : "/daily"
+                    }
+                  >
                     <Button size="lg" className="w-full mt-3">
                       <Play className="w-5 h-5" />
                       이어서 학습하기
@@ -187,7 +267,7 @@ export default function DashboardPage() {
                   </Link>
                 </div>
               )}
-              {todayStatus === 'completed' && (
+              {todayStatus === "completed" && (
                 <div className="text-center py-2">
                   <div className="text-5xl mb-3">&#128049;</div>
                   <div className="flex items-center justify-center gap-2 mb-1">
@@ -215,26 +295,30 @@ export default function DashboardPage() {
             <CardBody className="text-center">
               <div className="flex items-center justify-center gap-1.5 mb-1">
                 <Flame className="w-6 h-6 text-orange-500" />
-                <span className="text-3xl font-extrabold text-gray-900">{user.streak}</span>
+                <span className="text-3xl font-extrabold text-gray-900">
+                  {user.streak}
+                </span>
               </div>
               <p className="text-xs text-gray-500 font-medium">연속 학습</p>
-              <p className="text-xs text-orange-500 mt-1">{getStreakMessage(user.streak)}</p>
+              <p className="text-xs text-orange-500 mt-1">
+                {getStreakMessage(user.streak)}
+              </p>
             </CardBody>
           </Card>
 
           {/* Weekly Calendar */}
           <Card>
             <CardBody>
-              <p className="text-xs text-gray-500 font-medium mb-2 text-center">이번 주</p>
+              <p className="text-xs text-gray-500 font-medium mb-2 text-center">
+                이번 주
+              </p>
               <div className="flex justify-between">
                 {weekDays.map((day, i) => (
                   <div key={day} className="flex flex-col items-center gap-1">
                     <span className="text-[10px] text-gray-400">{day}</span>
                     <div
                       className={`w-5 h-5 rounded-full flex items-center justify-center ${
-                        weekCompletion[i]
-                          ? 'bg-emerald-500'
-                          : 'bg-gray-200'
+                        weekCompletion[i] ? "bg-emerald-500" : "bg-gray-200"
                       }`}
                     >
                       {weekCompletion[i] && (
@@ -248,6 +332,45 @@ export default function DashboardPage() {
           </Card>
         </motion.div>
 
+        {/* Daily Expression Card */}
+        {dailyExpression && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+          >
+            <Card>
+              <CardBody>
+                <div className="flex items-center gap-2 mb-2">
+                  <MessageCircle className="w-4 h-4 text-violet-500" />
+                  <h3 className="text-sm font-bold text-gray-700">
+                    오늘의 표현
+                  </h3>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600 font-medium">
+                    {dailyExpression.type === "proverb"
+                      ? "속담"
+                      : dailyExpression.type === "idiom"
+                        ? "관용어"
+                        : "사자성어"}
+                  </span>
+                </div>
+                <p className="text-base font-bold text-gray-900 mb-1.5">
+                  {dailyExpression.expression}
+                </p>
+                <p className="text-sm text-gray-600 mb-2">
+                  {dailyExpression.meaning}
+                </p>
+                <div className="bg-violet-50 rounded-lg p-2.5">
+                  <p className="text-xs text-violet-700">
+                    <span className="font-semibold">예문:</span>{" "}
+                    {dailyExpression.example}
+                  </p>
+                </div>
+              </CardBody>
+            </Card>
+          </motion.div>
+        )}
+
         {/* Domain Scores */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -256,15 +379,94 @@ export default function DashboardPage() {
         >
           <Card>
             <CardBody>
-              <h3 className="text-sm font-bold text-gray-700 mb-4">영역별 정확도</h3>
+              <h3 className="text-sm font-bold text-gray-700 mb-4">
+                영역별 정확도
+              </h3>
               <div className="flex justify-around">
-                <CircularProgress value={readingScore} label="읽기" color="#4F46E5" />
-                <CircularProgress value={literatureScore} label="문학" color="#10B981" />
-                <CircularProgress value={grammarScore} label="문법" color="#F59E0B" />
+                <CircularProgress
+                  value={readingScore}
+                  label="읽기"
+                  color="#4F46E5"
+                />
+                <CircularProgress
+                  value={literatureScore}
+                  label="문학"
+                  color="#10B981"
+                />
+                <CircularProgress
+                  value={grammarScore}
+                  label="문법"
+                  color="#F59E0B"
+                />
               </div>
             </CardBody>
           </Card>
         </motion.div>
+
+        {/* Daily Challenges */}
+        {dailyChallenges.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35 }}
+          >
+            <Card>
+              <CardBody>
+                <div className="flex items-center gap-2 mb-3">
+                  <Star className="w-4 h-4 text-amber-500" />
+                  <h3 className="text-sm font-bold text-gray-700">
+                    오늘의 미션
+                  </h3>
+                </div>
+                <div className="space-y-2">
+                  {dailyChallenges.map((challenge) => {
+                    const isCompleted =
+                      todayStatus === "completed" &&
+                      challenge.type === "completion";
+                    return (
+                      <div
+                        key={challenge.id}
+                        className={`flex items-center gap-3 p-2.5 rounded-lg border ${
+                          isCompleted
+                            ? "bg-emerald-50 border-emerald-200"
+                            : "bg-gray-50 border-gray-200"
+                        }`}
+                      >
+                        <div
+                          className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            isCompleted ? "bg-emerald-500" : "bg-gray-300"
+                          }`}
+                        >
+                          {isCompleted && (
+                            <CheckCircle className="w-4 h-4 text-white" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className={`text-xs font-bold ${isCompleted ? "text-emerald-700" : "text-gray-700"}`}
+                          >
+                            {challenge.title}
+                          </p>
+                          <p className="text-[10px] text-gray-500 truncate">
+                            {challenge.description}
+                          </p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-[10px] font-bold text-amber-600">
+                            +{challenge.xpReward} XP
+                          </p>
+                          <p className="text-[10px] text-amber-500">
+                            +{challenge.coinReward} 코인
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardBody>
+            </Card>
+          </motion.div>
+        )}
 
         {/* Recent Achievements */}
         {recentBadges.length > 0 && (
@@ -277,7 +479,10 @@ export default function DashboardPage() {
               <CardBody>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-bold text-gray-700">최근 뱃지</h3>
-                  <Link href="/achievements" className="text-xs text-indigo-600 flex items-center gap-0.5">
+                  <Link
+                    href="/achievements"
+                    className="text-xs text-indigo-600 flex items-center gap-0.5"
+                  >
                     전체 보기 <ChevronRight className="w-3 h-3" />
                   </Link>
                 </div>
@@ -289,7 +494,7 @@ export default function DashboardPage() {
                     >
                       <Trophy className="w-6 h-6 text-amber-500 mx-auto mb-1" />
                       <p className="text-[10px] font-medium text-gray-600 truncate">
-                        {badgeId.replace(/_/g, ' ')}
+                        {badgeId.replace(/_/g, " ")}
                       </p>
                     </div>
                   ))}
@@ -307,19 +512,33 @@ export default function DashboardPage() {
         >
           <Card>
             <CardBody>
-              <h3 className="text-sm font-bold text-gray-700 mb-3">학습 통계</h3>
+              <h3 className="text-sm font-bold text-gray-700 mb-3">
+                학습 통계
+              </h3>
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div className="p-3 bg-indigo-50 rounded-xl">
-                  <p className="text-xl font-bold text-indigo-600">{user.totalDaysCompleted}</p>
-                  <p className="text-[10px] text-gray-500 mt-0.5">총 학습 일수</p>
+                  <p className="text-xl font-bold text-indigo-600">
+                    {user.totalDaysCompleted}
+                  </p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">
+                    총 학습 일수
+                  </p>
                 </div>
                 <div className="p-3 bg-emerald-50 rounded-xl">
-                  <p className="text-xl font-bold text-emerald-600">{user.stats.totalQuestionsAnswered}</p>
-                  <p className="text-[10px] text-gray-500 mt-0.5">풀어본 문제</p>
+                  <p className="text-xl font-bold text-emerald-600">
+                    {user.stats.totalQuestionsAnswered}
+                  </p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">
+                    풀어본 문제
+                  </p>
                 </div>
                 <div className="p-3 bg-amber-50 rounded-xl">
-                  <p className="text-xl font-bold text-amber-600">{Math.round(user.stats.averageAccuracy)}%</p>
-                  <p className="text-[10px] text-gray-500 mt-0.5">평균 정확도</p>
+                  <p className="text-xl font-bold text-amber-600">
+                    {Math.round(user.stats.averageAccuracy)}%
+                  </p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">
+                    평균 정확도
+                  </p>
                 </div>
               </div>
             </CardBody>
@@ -331,19 +550,44 @@ export default function DashboardPage() {
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-2 py-2 z-40">
         <div className="max-w-lg mx-auto flex justify-around">
           {[
-            { icon: <Home className="w-5 h-5" />, label: '홈', href: '/dashboard', active: true },
-            { icon: <BookOpen className="w-5 h-5" />, label: '학습', href: '/daily', active: false },
-            { icon: <BarChart3 className="w-5 h-5" />, label: '순위', href: '/ranking', active: false },
-            { icon: <Award className="w-5 h-5" />, label: '뱃지', href: '/achievements', active: false },
-            { icon: <UserIcon className="w-5 h-5" />, label: '프로필', href: '/profile', active: false },
+            {
+              icon: <Home className="w-5 h-5" />,
+              label: "홈",
+              href: "/dashboard",
+              active: true,
+            },
+            {
+              icon: <BookOpen className="w-5 h-5" />,
+              label: "학습",
+              href: "/daily",
+              active: false,
+            },
+            {
+              icon: <BarChart3 className="w-5 h-5" />,
+              label: "순위",
+              href: "/ranking",
+              active: false,
+            },
+            {
+              icon: <Award className="w-5 h-5" />,
+              label: "뱃지",
+              href: "/achievements",
+              active: false,
+            },
+            {
+              icon: <UserIcon className="w-5 h-5" />,
+              label: "프로필",
+              href: "/profile",
+              active: false,
+            },
           ].map((item) => (
             <Link
               key={item.label}
               href={item.href}
               className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors ${
                 item.active
-                  ? 'text-indigo-600'
-                  : 'text-gray-400 hover:text-gray-600'
+                  ? "text-indigo-600"
+                  : "text-gray-400 hover:text-gray-600"
               }`}
             >
               {item.icon}
