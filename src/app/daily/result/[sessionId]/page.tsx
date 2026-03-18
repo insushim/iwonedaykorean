@@ -158,7 +158,7 @@ export default function ResultPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-[#FAFBFF]">
         <div className="text-center">
           <div className="w-10 h-10 border-3 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mx-auto" />
           <p className="mt-4 text-gray-500">결과를 불러오고 있어요...</p>

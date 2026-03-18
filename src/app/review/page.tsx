@@ -165,7 +165,7 @@ export default function ReviewPage() {
   }, [wrongAnswerNotes, activeFilter]);
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-8">
+    <div className="min-h-screen bg-[#FAFBFF] pb-8">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-4 py-4">
         <div className="max-w-lg mx-auto">

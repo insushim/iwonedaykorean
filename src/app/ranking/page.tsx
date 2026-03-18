@@ -49,7 +49,7 @@ export default function RankingPage() {
   const rest = leaderboard.slice(3);
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-8">
+    <div className="min-h-screen bg-[#FAFBFF] pb-8">
       {/* Header */}
       <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 text-white px-4 pt-4 pb-6 rounded-b-3xl">
         <div className="max-w-lg mx-auto">

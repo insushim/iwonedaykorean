@@ -7,28 +7,24 @@ import {
   Flame,
   Play,
   CheckCircle,
-  Clock,
   Trophy,
   Star,
   BookOpen,
-  Feather,
-  SpellCheck,
   ChevronRight,
   Home,
   BarChart3,
   Award,
   User as UserIcon,
   MessageCircle,
+  TrendingUp,
 } from "lucide-react";
 import type { DailyExpression } from "@/data/daily-expressions";
 import type { DailyChallenge } from "@/data/daily-challenges";
 import Button from "@/components/ui/Button";
 import Card, { CardBody } from "@/components/ui/Card";
-import ProgressBar from "@/components/ui/ProgressBar";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   getLevelProgress,
-  formatTimeKorean,
   getStreakMessage,
   calculateAccuracy,
 } from "@/lib/utils";
@@ -44,28 +40,28 @@ function CircularProgress({
   label: string;
   color: string;
 }) {
-  const radius = 36;
+  const radius = 34;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (value / 100) * circumference;
 
   return (
     <div className="flex flex-col items-center gap-1.5">
-      <div className="relative w-20 h-20">
-        <svg className="w-full h-full -rotate-90" viewBox="0 0 80 80">
+      <div className="relative w-[76px] h-[76px]">
+        <svg className="w-full h-full -rotate-90" viewBox="0 0 76 76">
           <circle
-            cx="40"
-            cy="40"
+            cx="38"
+            cy="38"
             r={radius}
-            stroke="#E5E7EB"
-            strokeWidth="6"
+            stroke="#F1F5F9"
+            strokeWidth="5"
             fill="none"
           />
           <motion.circle
-            cx="40"
-            cy="40"
+            cx="38"
+            cy="38"
             r={radius}
             stroke={color}
-            strokeWidth="6"
+            strokeWidth="5"
             fill="none"
             strokeLinecap="round"
             initial={{ strokeDashoffset: circumference }}
@@ -78,7 +74,7 @@ function CircularProgress({
           <span className="text-sm font-bold text-gray-800">{value}%</span>
         </div>
       </div>
-      <span className="text-xs font-medium text-gray-600">{label}</span>
+      <span className="text-xs font-medium text-gray-500">{label}</span>
     </div>
   );
 }
@@ -89,22 +85,15 @@ export default function DashboardPage() {
     "not_started" | "in_progress" | "completed"
   >("not_started");
   const [todaySessionId, setTodaySessionId] = useState<string | null>(null);
-  const [weekCompletion, setWeekCompletion] = useState<boolean[]>([
-    false,
-    false,
-    false,
-    false,
-    false,
-    false,
-    false,
-  ]);
+  const [weekCompletion, setWeekCompletion] = useState<boolean[]>(
+    Array(7).fill(false),
+  );
   const [dailyExpression, setDailyExpression] =
     useState<DailyExpression | null>(null);
   const [dailyChallenges, setDailyChallenges] = useState<DailyChallenge[]>([]);
 
   useEffect(() => {
     if (!user) return;
-
     fetch("/api/sessions/today")
       .then((r) => r.json())
       .then((data) => {
@@ -114,41 +103,37 @@ export default function DashboardPage() {
         }
       })
       .catch(() => {});
-
     fetch("/api/sessions/weekly")
       .then((r) => r.json())
       .then((data) => {
-        if (data.success && data.weekCompletion) {
+        if (data.success && data.weekCompletion)
           setWeekCompletion(data.weekCompletion);
-        }
       })
       .catch(() => {});
-
     fetch("/api/daily-expression")
       .then((r) => r.json())
       .then((data) => {
-        if (data.success && data.expression) {
+        if (data.success && data.expression)
           setDailyExpression(data.expression);
-        }
       })
       .catch(() => {});
-
     fetch("/api/daily-challenges")
       .then((r) => r.json())
       .then((data) => {
-        if (data.success && data.challenges) {
+        if (data.success && data.challenges)
           setDailyChallenges(data.challenges);
-        }
       })
       .catch(() => {});
   }, [user]);
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-[#FAFBFF]">
         <div className="text-center">
-          <div className="text-6xl mb-4">&#128049;</div>
-          <p className="text-gray-600 mb-4">로그인이 필요합니다.</p>
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center mx-auto mb-4">
+            <span className="text-2xl text-white font-bold">H</span>
+          </div>
+          <p className="text-gray-500 mb-4">로그인이 필요합니다.</p>
           <Link href="/login">
             <Button>로그인하기</Button>
           </Link>
@@ -175,39 +160,37 @@ export default function DashboardPage() {
   const recentBadges = user.badges.slice(-3);
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-24">
+    <div className="min-h-screen bg-[#FAFBFF] pb-24">
       {/* Header */}
-      <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 text-white px-4 pt-6 pb-8 rounded-b-3xl">
-        <div className="max-w-lg mx-auto">
+      <div className="bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-600 text-white px-4 pt-6 pb-10 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-48 h-48 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3" />
+        <div className="max-w-lg mx-auto relative">
           <div className="flex items-center gap-3">
-            <motion.div
-              animate={{ y: [0, -4, 0] }}
-              transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-              className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center"
-            >
-              <span className="text-3xl">&#128049;</span>
-            </motion.div>
+            <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center">
+              <span className="text-2xl font-bold">H</span>
+            </div>
             <div className="flex-1">
-              <h1 className="text-lg font-bold">
-                안녕, {user.displayName}! 오늘도 화이팅!
-              </h1>
-              <p className="text-indigo-200 text-sm">
+              <h1 className="text-lg font-bold">안녕, {user.displayName}!</h1>
+              <p className="text-white/60 text-sm">
                 Lv.{levelInfo.currentLevel} {levelInfo.title}
               </p>
             </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 rounded-xl backdrop-blur-sm">
+              <Flame className="w-4 h-4 text-orange-300" />
+              <span className="text-sm font-bold">{user.streak}</span>
+            </div>
           </div>
 
-          {/* Level/XP Bar */}
-          <div className="mt-4">
-            <div className="flex justify-between text-xs text-indigo-200 mb-1">
+          <div className="mt-5">
+            <div className="flex justify-between text-xs text-white/50 mb-1.5">
               <span>Lv.{levelInfo.currentLevel}</span>
               <span>
                 {user.xp} / {levelInfo.nextLevelXP} XP
               </span>
             </div>
-            <div className="w-full h-2.5 rounded-full bg-white/20 overflow-hidden">
+            <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
               <motion.div
-                className="h-full rounded-full bg-amber-400"
+                className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400"
                 initial={{ width: 0 }}
                 animate={{ width: `${levelInfo.progress}%` }}
                 transition={{ duration: 1, ease: "easeOut" }}
@@ -217,8 +200,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 -mt-4 space-y-4">
-        {/* Today's Study Status */}
+      <div className="max-w-lg mx-auto px-4 -mt-5 space-y-4">
+        {/* Today's Study */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -228,18 +211,14 @@ export default function DashboardPage() {
             <CardBody>
               {todayStatus === "not_started" && (
                 <div className="text-center py-2">
-                  <motion.div
-                    animate={{ scale: [1, 1.05, 1] }}
-                    transition={{ repeat: Infinity, duration: 2 }}
-                    className="text-5xl mb-3"
-                  >
-                    &#128049;
-                  </motion.div>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 flex items-center justify-center mx-auto mb-3">
+                    <BookOpen className="w-7 h-7 text-indigo-600" />
+                  </div>
                   <h2 className="text-lg font-bold text-gray-900 mb-1">
                     오늘의 학습을 시작해볼까요?
                   </h2>
-                  <p className="text-sm text-gray-500 mb-4">
-                    비문학 + 문학 + 시 + 문법으로 구성된 15분 학습이에요
+                  <p className="text-sm text-gray-400 mb-4">
+                    비문학 + 문학 + 시 + 문법 | 약 15분
                   </p>
                   <Link href="/daily">
                     <Button size="lg" className="w-full">
@@ -251,9 +230,11 @@ export default function DashboardPage() {
               )}
               {todayStatus === "in_progress" && (
                 <div className="text-center py-2">
-                  <div className="text-5xl mb-3">&#128049;</div>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center mx-auto mb-3">
+                    <TrendingUp className="w-7 h-7 text-amber-600" />
+                  </div>
                   <h2 className="text-lg font-bold text-gray-900 mb-1">
-                    학습 중이에요! 이어서 할까요?
+                    학습 중! 이어서 할까요?
                   </h2>
                   <Link
                     href={
@@ -269,47 +250,43 @@ export default function DashboardPage() {
               )}
               {todayStatus === "completed" && (
                 <div className="text-center py-2">
-                  <div className="text-5xl mb-3">&#128049;</div>
-                  <div className="flex items-center justify-center gap-2 mb-1">
-                    <CheckCircle className="w-6 h-6 text-emerald-500" />
-                    <h2 className="text-lg font-bold text-emerald-600">
-                      오늘 학습 완료! 대단해요!
-                    </h2>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center mx-auto mb-3">
+                    <CheckCircle className="w-7 h-7 text-emerald-600" />
                   </div>
-                  <p className="text-sm text-gray-500">내일 또 만나요!</p>
+                  <h2 className="text-lg font-bold text-emerald-600 mb-0.5">
+                    오늘 학습 완료!
+                  </h2>
+                  <p className="text-sm text-gray-400">내일 또 만나요</p>
                 </div>
               )}
             </CardBody>
           </Card>
         </motion.div>
 
-        {/* Streak & Weekly Calendar */}
+        {/* Streak & Weekly */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
           className="grid grid-cols-2 gap-3"
         >
-          {/* Streak */}
           <Card>
             <CardBody className="text-center">
               <div className="flex items-center justify-center gap-1.5 mb-1">
-                <Flame className="w-6 h-6 text-orange-500" />
-                <span className="text-3xl font-extrabold text-gray-900">
+                <Flame className="w-5 h-5 text-orange-500" />
+                <span className="text-2xl font-extrabold text-gray-900">
                   {user.streak}
                 </span>
               </div>
-              <p className="text-xs text-gray-500 font-medium">연속 학습</p>
-              <p className="text-xs text-orange-500 mt-1">
+              <p className="text-xs text-gray-400 font-medium">연속 학습</p>
+              <p className="text-[11px] text-orange-500 mt-1 font-medium">
                 {getStreakMessage(user.streak)}
               </p>
             </CardBody>
           </Card>
-
-          {/* Weekly Calendar */}
           <Card>
             <CardBody>
-              <p className="text-xs text-gray-500 font-medium mb-2 text-center">
+              <p className="text-xs text-gray-400 font-medium mb-2 text-center">
                 이번 주
               </p>
               <div className="flex justify-between">
@@ -317,9 +294,7 @@ export default function DashboardPage() {
                   <div key={day} className="flex flex-col items-center gap-1">
                     <span className="text-[10px] text-gray-400">{day}</span>
                     <div
-                      className={`w-5 h-5 rounded-full flex items-center justify-center ${
-                        weekCompletion[i] ? "bg-emerald-500" : "bg-gray-200"
-                      }`}
+                      className={`w-5 h-5 rounded-full flex items-center justify-center ${weekCompletion[i] ? "bg-emerald-500" : "bg-gray-100"}`}
                     >
                       {weekCompletion[i] && (
                         <CheckCircle className="w-3 h-3 text-white" />
@@ -332,7 +307,7 @@ export default function DashboardPage() {
           </Card>
         </motion.div>
 
-        {/* Daily Expression Card */}
+        {/* Daily Expression */}
         {dailyExpression && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -346,7 +321,7 @@ export default function DashboardPage() {
                   <h3 className="text-sm font-bold text-gray-700">
                     오늘의 표현
                   </h3>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600 font-medium">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 font-medium border border-violet-100">
                     {dailyExpression.type === "proverb"
                       ? "속담"
                       : dailyExpression.type === "idiom"
@@ -354,13 +329,13 @@ export default function DashboardPage() {
                         : "사자성어"}
                   </span>
                 </div>
-                <p className="text-base font-bold text-gray-900 mb-1.5">
+                <p className="text-base font-bold text-gray-900 mb-1">
                   {dailyExpression.expression}
                 </p>
-                <p className="text-sm text-gray-600 mb-2">
+                <p className="text-sm text-gray-500 mb-2">
                   {dailyExpression.meaning}
                 </p>
-                <div className="bg-violet-50 rounded-lg p-2.5">
+                <div className="bg-violet-50/60 rounded-xl p-2.5 border border-violet-100/50">
                   <p className="text-xs text-violet-700">
                     <span className="font-semibold">예문:</span>{" "}
                     {dailyExpression.example}
@@ -386,7 +361,7 @@ export default function DashboardPage() {
                 <CircularProgress
                   value={readingScore}
                   label="읽기"
-                  color="#4F46E5"
+                  color="#6366F1"
                 />
                 <CircularProgress
                   value={literatureScore}
@@ -426,16 +401,10 @@ export default function DashboardPage() {
                     return (
                       <div
                         key={challenge.id}
-                        className={`flex items-center gap-3 p-2.5 rounded-lg border ${
-                          isCompleted
-                            ? "bg-emerald-50 border-emerald-200"
-                            : "bg-gray-50 border-gray-200"
-                        }`}
+                        className={`flex items-center gap-3 p-3 rounded-xl border ${isCompleted ? "bg-emerald-50/50 border-emerald-200/60" : "bg-gray-50/50 border-gray-100"}`}
                       >
                         <div
-                          className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-                            isCompleted ? "bg-emerald-500" : "bg-gray-300"
-                          }`}
+                          className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isCompleted ? "bg-emerald-500" : "bg-gray-200"}`}
                         >
                           {isCompleted && (
                             <CheckCircle className="w-4 h-4 text-white" />
@@ -447,16 +416,13 @@ export default function DashboardPage() {
                           >
                             {challenge.title}
                           </p>
-                          <p className="text-[10px] text-gray-500 truncate">
+                          <p className="text-[10px] text-gray-400 truncate">
                             {challenge.description}
                           </p>
                         </div>
                         <div className="text-right flex-shrink-0">
                           <p className="text-[10px] font-bold text-amber-600">
                             +{challenge.xpReward} XP
-                          </p>
-                          <p className="text-[10px] text-amber-500">
-                            +{challenge.coinReward} 코인
                           </p>
                         </div>
                       </div>
@@ -468,7 +434,7 @@ export default function DashboardPage() {
           </motion.div>
         )}
 
-        {/* Recent Achievements */}
+        {/* Recent Badges */}
         {recentBadges.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -481,7 +447,7 @@ export default function DashboardPage() {
                   <h3 className="text-sm font-bold text-gray-700">최근 뱃지</h3>
                   <Link
                     href="/achievements"
-                    className="text-xs text-indigo-600 flex items-center gap-0.5"
+                    className="text-xs text-indigo-600 flex items-center gap-0.5 font-medium"
                   >
                     전체 보기 <ChevronRight className="w-3 h-3" />
                   </Link>
@@ -490,10 +456,10 @@ export default function DashboardPage() {
                   {recentBadges.map((badgeId) => (
                     <div
                       key={badgeId}
-                      className="flex-1 p-3 bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl text-center border border-amber-200"
+                      className="flex-1 p-3 bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl text-center border border-amber-100"
                     >
-                      <Trophy className="w-6 h-6 text-amber-500 mx-auto mb-1" />
-                      <p className="text-[10px] font-medium text-gray-600 truncate">
+                      <Trophy className="w-5 h-5 text-amber-500 mx-auto mb-1" />
+                      <p className="text-[10px] font-medium text-gray-500 truncate">
                         {badgeId.replace(/_/g, " ")}
                       </p>
                     </div>
@@ -516,27 +482,25 @@ export default function DashboardPage() {
                 학습 통계
               </h3>
               <div className="grid grid-cols-3 gap-3 text-center">
-                <div className="p-3 bg-indigo-50 rounded-xl">
+                <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100/50">
                   <p className="text-xl font-bold text-indigo-600">
                     {user.totalDaysCompleted}
                   </p>
-                  <p className="text-[10px] text-gray-500 mt-0.5">
-                    총 학습 일수
-                  </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">총 학습일</p>
                 </div>
-                <div className="p-3 bg-emerald-50 rounded-xl">
+                <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-100/50">
                   <p className="text-xl font-bold text-emerald-600">
                     {user.stats.totalQuestionsAnswered}
                   </p>
-                  <p className="text-[10px] text-gray-500 mt-0.5">
+                  <p className="text-[10px] text-gray-400 mt-0.5">
                     풀어본 문제
                   </p>
                 </div>
-                <div className="p-3 bg-amber-50 rounded-xl">
+                <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-100/50">
                   <p className="text-xl font-bold text-amber-600">
                     {Math.round(user.stats.averageAccuracy)}%
                   </p>
-                  <p className="text-[10px] text-gray-500 mt-0.5">
+                  <p className="text-[10px] text-gray-400 mt-0.5">
                     평균 정확도
                   </p>
                 </div>
@@ -547,7 +511,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-2 py-2 z-40">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-gray-100/50 px-2 py-2 z-40">
         <div className="max-w-lg mx-auto flex justify-around">
           {[
             {
@@ -584,10 +548,10 @@ export default function DashboardPage() {
             <Link
               key={item.label}
               href={item.href}
-              className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors ${
+              className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-colors ${
                 item.active
                   ? "text-indigo-600"
-                  : "text-gray-400 hover:text-gray-600"
+                  : "text-gray-400 hover:text-gray-500"
               }`}
             >
               {item.icon}

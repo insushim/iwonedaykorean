@@ -41,7 +41,7 @@ export default function ProfilePage() {
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-[#FAFBFF]">
         <div className="text-center">
           <div className="text-6xl mb-4">&#128049;</div>
           <p className="text-gray-600 mb-4">로그인이 필요합니다.</p>
@@ -125,7 +125,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-8">
+    <div className="min-h-screen bg-[#FAFBFF] pb-8">
       {/* Header */}
       <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 text-white px-4 pt-4 pb-8 rounded-b-3xl">
         <div className="max-w-lg mx-auto">

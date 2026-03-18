@@ -308,6 +308,181 @@ async function persistSession(
 }
 
 // ---------------------------------------------------------------------------
+// Shared AI-generated content pool (D1 table: shared_content)
+// ---------------------------------------------------------------------------
+
+type DBLike = {
+  prepare: (query: string) => {
+    bind: (...args: unknown[]) => {
+      run: () => Promise<unknown>;
+      first: <T>() => Promise<T | null>;
+      all: <T>() => Promise<{ results: T[] }>;
+    };
+  };
+};
+
+async function buildSessionFromSharedPool(
+  db: DBLike,
+  userId: string,
+  grade: Grade,
+  semester: Semester,
+  date: string,
+  pastPassageTitles: string[] = [],
+): Promise<DailySession | null> {
+  try {
+    // Fetch all shared content for this grade
+    const rows = await db
+      .prepare(
+        "SELECT * FROM shared_content WHERE grade = ? AND semester = ? ORDER BY created_at DESC",
+      )
+      .bind(grade, semester)
+      .all<{
+        id: string;
+        grade: number;
+        semester: number;
+        passage_type: string;
+        title: string;
+        content_json: string;
+        created_at: string;
+      }>();
+
+    if (!rows.results || rows.results.length === 0) return null;
+
+    // Filter out already-used passages
+    const available = rows.results.filter(
+      (r) => !pastPassageTitles.includes(r.title),
+    );
+    if (available.length < 3) return null;
+
+    const gradeGroup = getGradeGroup(grade);
+    const config = getQuestionConfig(gradeGroup);
+
+    // Select one of each type using date hash
+    const byType: Record<string, typeof available> = {};
+    for (const r of available) {
+      if (!byType[r.passage_type]) byType[r.passage_type] = [];
+      byType[r.passage_type].push(r);
+    }
+
+    const passages: SessionPassage[] = [];
+    const types: [string, number][] = [
+      ["nonfiction", config.nonfiction],
+      ["fiction", config.fiction],
+      ["poetry", config.poetry],
+    ];
+
+    for (const [type, maxQ] of types) {
+      const pool = byType[type];
+      if (!pool || pool.length === 0) continue;
+      const hash = dateHash(
+        date,
+        `shared-${grade}-${semester}-${type}-${userId}`,
+      );
+      const item = pool[hash % pool.length];
+      try {
+        const parsed = JSON.parse(item.content_json) as SessionPassage;
+        if (parsed.questions && parsed.questions.length > 0) {
+          parsed.questions = parsed.questions.slice(0, maxQ);
+          passages.push(parsed);
+        }
+      } catch {
+        // skip malformed entries
+      }
+    }
+
+    if (passages.length === 0) return null;
+
+    // Grammar from static pool
+    const grammarQuestions = (
+      await selectDailyContent(grade, semester, date, pastPassageTitles, userId)
+    ).grammarQuestions.map(buildSessionQuestion);
+
+    const totalQuestions =
+      passages.reduce((sum, p) => sum + p.questions.length, 0) +
+      grammarQuestions.length;
+
+    const sessionId = generateSessionId(userId);
+
+    return {
+      id: sessionId,
+      userId,
+      grade,
+      semester,
+      date,
+      status: "not_started",
+      passages,
+      grammarQuestions,
+      totalQuestions,
+      correctOnFirstTry: 0,
+      totalAttempts: 0,
+      xpEarned: 0,
+      coinsEarned: 0,
+      startedAt: new Date().toISOString(),
+      timeSpentSeconds: 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function dateHash(dateStr: string, salt: string = ""): number {
+  const str = dateStr + salt;
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (h << 5) - h + str.charCodeAt(i);
+    h = h & h;
+  }
+  return Math.abs(h);
+}
+
+async function saveToSharedPool(
+  db: DBLike,
+  grade: Grade,
+  semester: Semester,
+  session: DailySession,
+): Promise<void> {
+  try {
+    // Create the shared_content table if it doesn't exist
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS shared_content (
+          id TEXT PRIMARY KEY,
+          grade INTEGER NOT NULL,
+          semester INTEGER NOT NULL,
+          passage_type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          content_json TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        )`,
+      )
+      .bind()
+      .run();
+
+    const now = new Date().toISOString();
+
+    for (const passage of session.passages) {
+      const id = `sc-${grade}-${semester}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await db
+        .prepare(
+          "INSERT OR IGNORE INTO shared_content (id, grade, semester, passage_type, title, content_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(
+          id,
+          grade,
+          semester,
+          passage.type,
+          passage.title,
+          JSON.stringify(passage),
+          now,
+        )
+        .run();
+    }
+  } catch (err) {
+    console.error("공유 풀 저장 실패:", err);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // POST handler
 // ---------------------------------------------------------------------------
 
@@ -403,7 +578,7 @@ export async function POST(request: Request) {
     try {
       const pastRows = await db
         .prepare(
-          "SELECT passages_data FROM sessions WHERE user_id = ? ORDER BY date DESC LIMIT 30",
+          "SELECT passages_data FROM sessions WHERE user_id = ? ORDER BY date DESC LIMIT 365",
         )
         .bind(userId)
         .all<{ passages_data: string }>();
@@ -445,7 +620,23 @@ export async function POST(request: Request) {
       console.error("콘텐츠 풀 로드 실패:", poolError);
     }
 
-    // 2. Fallback: Gemini AI (only when content pool is empty/broken)
+    // 2. Check shared AI-generated pool in D1 before calling Gemini
+    if (!session) {
+      try {
+        session = await buildSessionFromSharedPool(
+          db,
+          userId,
+          validGrade,
+          validSemester,
+          today,
+          pastPassageTitles,
+        );
+      } catch (poolError) {
+        console.error("공유 풀 로드 실패:", poolError);
+      }
+    }
+
+    // 3. Last resort: Gemini AI → generate and save to shared pool for reuse
     if (!session) {
       try {
         session = await buildSessionFromGemini(
@@ -463,6 +654,9 @@ export async function POST(request: Request) {
         if (geminiPassageQ === 0) {
           console.error("Gemini 생성 결과에 문제가 없음");
           session = null;
+        } else {
+          // Save AI-generated passages to shared pool for other students to reuse
+          await saveToSharedPool(db, validGrade, validSemester, session);
         }
       } catch (geminiError) {
         console.error("Gemini 생성 실패:", geminiError);

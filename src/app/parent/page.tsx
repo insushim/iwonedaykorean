@@ -156,7 +156,7 @@ export default function ParentPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-[#FAFBFF]">
         <div className="w-8 h-8 border-3 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin" />
       </div>
     );
@@ -164,7 +164,7 @@ export default function ParentPage() {
 
   if (!linked || !childData) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-4">
+      <div className="min-h-screen bg-[#FAFBFF] flex flex-col items-center justify-center px-4">
         <div className="max-w-md w-full text-center">
           <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-100 to-indigo-200 flex items-center justify-center mx-auto shadow-lg mb-6">
             <Users className="w-10 h-10 text-indigo-600" />
@@ -188,7 +188,7 @@ export default function ParentPage() {
   const child = childData;
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-8">
+    <div className="min-h-screen bg-[#FAFBFF] pb-8">
       {/* Header */}
       <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 text-white px-4 pt-4 pb-6 rounded-b-3xl">
         <div className="max-w-lg mx-auto">

@@ -92,6 +92,34 @@ async function loadGradeSemester(
         break;
       }
     }
+
+    // Load extra content for the grade group
+    const gradeGroup = grade <= 2 ? "1-2" : grade <= 4 ? "3-4" : "5-6";
+    let extra: PassageWithQuestions[] = [];
+    try {
+      if (gradeGroup === "1-2" && semester === 1) {
+        const ex = await import("@/data/content/extra-grade12-sem1");
+        extra = ex.EXTRA_GRADE12_SEM1 || [];
+      } else if (gradeGroup === "1-2" && semester === 2) {
+        const ex = await import("@/data/content/extra-grade12-sem2");
+        extra = ex.EXTRA_GRADE12_SEM2 || [];
+      } else if (gradeGroup === "3-4" && semester === 1) {
+        const ex = await import("@/data/content/extra-grade34-sem1");
+        extra = ex.EXTRA_GRADE34_SEM1 || [];
+      } else if (gradeGroup === "3-4" && semester === 2) {
+        const ex = await import("@/data/content/extra-grade34-sem2");
+        extra = ex.EXTRA_GRADE34_SEM2 || [];
+      } else if (gradeGroup === "5-6" && semester === 1) {
+        const ex = await import("@/data/content/extra-grade56-sem1");
+        extra = ex.EXTRA_GRADE56_SEM1 || [];
+      } else if (gradeGroup === "5-6" && semester === 2) {
+        const ex = await import("@/data/content/extra-grade56-sem2");
+        extra = ex.EXTRA_GRADE56_SEM2 || [];
+      }
+    } catch {
+      extra = [];
+    }
+    content = [...content, ...extra];
   } catch {
     content = [];
   }
@@ -223,24 +251,30 @@ export async function selectDailyContent(
     (item) => item.passage.type === "poetry",
   );
 
-  // Use date hash to select one from each pool
+  // Smart rotation: sequential cycling through pool to maximize non-repeat days
+  // With 100+ passages per type, can go 100+ days without repeats
   const selectFromPool = (
     pool: PassageWithQuestions[],
     typeSalt: string,
   ): PassageWithQuestions | null => {
     if (pool.length === 0) return null;
 
-    // First try to avoid recently used passages
+    // Remove recently used passages (supports up to 365 days tracking)
     const unused = pool.filter(
       (item) => !pastPassageTitles.includes(item.passage.title),
     );
+
+    // If all passages used, reset cycle (start from beginning with different offset)
     const targetPool = unused.length > 0 ? unused : pool;
 
-    const typeHash = dateHash(
-      dateStr,
-      `${grade}-${semester}-${typeSalt}-${userId}`,
+    // Day-based sequential index + user salt for variety between students
+    const dayOfYear = Math.floor(
+      (new Date(dateStr).getTime() -
+        new Date(dateStr.slice(0, 4) + "-01-01").getTime()) /
+        86400000,
     );
-    const index = typeHash % targetPool.length;
+    const userHash = dateHash(userId, typeSalt);
+    const index = (dayOfYear + userHash) % targetPool.length;
     return targetPool[index];
   };
 
