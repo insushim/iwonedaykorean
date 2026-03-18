@@ -72,11 +72,18 @@ function buildSessionQuestion(q: Question): SessionQuestion {
 function buildSessionPassageFromContent(
   item: PassageWithQuestions,
   maxQuestions: number,
+  correctlyAnsweredIds: Set<string> = new Set(),
 ): SessionPassage {
-  const selected =
-    item.questions.length > maxQuestions
-      ? pickRandom(item.questions, maxQuestions)
+  // Filter out questions the user already answered correctly
+  const availableQuestions =
+    correctlyAnsweredIds.size > 0
+      ? item.questions.filter((q) => !correctlyAnsweredIds.has(q.id))
       : item.questions;
+
+  const selected =
+    availableQuestions.length > maxQuestions
+      ? pickRandom(availableQuestions, maxQuestions)
+      : availableQuestions;
 
   return {
     passageId: item.passage.id,
@@ -97,6 +104,7 @@ async function buildSessionFromContentPool(
   semester: Semester,
   date: string,
   pastPassageTitles: string[] = [],
+  correctlyAnsweredIds: Set<string> = new Set(),
 ): Promise<DailySession | null> {
   const gradeGroup = getGradeGroup(grade);
   const config = getQuestionConfig(gradeGroup);
@@ -116,22 +124,38 @@ async function buildSessionFromContentPool(
   const passages: SessionPassage[] = [];
 
   if (daily.nonfiction && daily.nonfiction.questions.length > 0) {
-    passages.push(
-      buildSessionPassageFromContent(daily.nonfiction, config.nonfiction),
+    const sp = buildSessionPassageFromContent(
+      daily.nonfiction,
+      config.nonfiction,
+      correctlyAnsweredIds,
     );
+    if (sp.questions.length > 0) passages.push(sp);
   }
 
   if (daily.fiction && daily.fiction.questions.length > 0) {
-    passages.push(
-      buildSessionPassageFromContent(daily.fiction, config.fiction),
+    const sp = buildSessionPassageFromContent(
+      daily.fiction,
+      config.fiction,
+      correctlyAnsweredIds,
     );
+    if (sp.questions.length > 0) passages.push(sp);
   }
 
   if (daily.poetry && daily.poetry.questions.length > 0) {
-    passages.push(buildSessionPassageFromContent(daily.poetry, config.poetry));
+    const sp = buildSessionPassageFromContent(
+      daily.poetry,
+      config.poetry,
+      correctlyAnsweredIds,
+    );
+    if (sp.questions.length > 0) passages.push(sp);
   }
 
-  const sessionGrammar = daily.grammarQuestions.map(buildSessionQuestion);
+  // Filter out correctly-answered grammar questions too
+  const grammarPool =
+    correctlyAnsweredIds.size > 0
+      ? daily.grammarQuestions.filter((q) => !correctlyAnsweredIds.has(q.id))
+      : daily.grammarQuestions;
+  const sessionGrammar = grammarPool.map(buildSessionQuestion);
 
   const totalQuestions =
     passages.reduce((sum, p) => sum + p.questions.length, 0) +
@@ -575,22 +599,42 @@ export async function POST(request: Request) {
     // -----------------------------------------------------------------------
 
     let pastPassageTitles: string[] = [];
+    const correctlyAnsweredQuestionIds = new Set<string>();
     try {
       const pastRows = await db
         .prepare(
-          "SELECT passages_data FROM sessions WHERE user_id = ? ORDER BY date DESC LIMIT 365",
+          "SELECT passages_data, grammar_questions_data FROM sessions WHERE user_id = ? ORDER BY date DESC LIMIT 365",
         )
         .bind(userId)
-        .all<{ passages_data: string }>();
+        .all<{ passages_data: string; grammar_questions_data: string }>();
 
       if (pastRows.results) {
         for (const row of pastRows.results) {
           try {
-            const passages = JSON.parse(row.passages_data || "[]") as {
-              title: string;
-            }[];
+            const passages = JSON.parse(
+              row.passages_data || "[]",
+            ) as SessionPassage[];
             for (const p of passages) {
               if (p.title) pastPassageTitles.push(p.title);
+              if (p.questions) {
+                for (const q of p.questions) {
+                  if (q.isCorrect === true && q.questionId) {
+                    correctlyAnsweredQuestionIds.add(q.questionId);
+                  }
+                }
+              }
+            }
+          } catch {
+            // skip malformed rows
+          }
+          try {
+            const grammarQs = JSON.parse(
+              row.grammar_questions_data || "[]",
+            ) as SessionQuestion[];
+            for (const q of grammarQs) {
+              if (q.isCorrect === true && q.questionId) {
+                correctlyAnsweredQuestionIds.add(q.questionId);
+              }
             }
           } catch {
             // skip malformed rows
@@ -615,6 +659,7 @@ export async function POST(request: Request) {
         validSemester,
         today,
         pastPassageTitles,
+        correctlyAnsweredQuestionIds,
       );
     } catch (poolError) {
       console.error("콘텐츠 풀 로드 실패:", poolError);
